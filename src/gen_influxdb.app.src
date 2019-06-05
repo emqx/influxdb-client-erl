@@ -1,0 +1,7 @@
+{application,gen_influxdb,
+             [{description,"TSDB Client"},
+              {vsn,"git"},
+              {modules,[]},
+              {registered,[gen_influxdb_sup]},
+              {applications,[kernel,stdlib]},
+              {mod,{gen_influxdb_app,[]}}]}.

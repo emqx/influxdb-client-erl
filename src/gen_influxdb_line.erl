@@ -99,10 +99,12 @@ encode_tags([{Key, Value} | Rest]) ->
 encode_tag(Key, Value) ->
     [",", escape_special_chars(tag_key, to_binary(Key)), "=", escape_special_chars(tag_value, to_binary(Value))].
 
+encode_timestamp(undefined) ->
+    undefined;
 encode_timestamp(Timestamp) when is_integer(Timestamp) ->
     erlang:integer_to_binary(Timestamp);
 encode_timestamp(_) ->
-    undefined.
+    error(invalid_type).
 
 escape_special_chars(field_value, String) when is_binary(String) ->
     escape_special_chars([?backslash], String);

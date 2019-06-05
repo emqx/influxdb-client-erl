@@ -67,7 +67,8 @@ init([Opts]) ->
             {ok, Socket} = gen_udp:open(0, [binary, {active, false}, addr_family(Addr)]),
             {ok, #state{host = Addr,
                         socket = Socket,
-                        port = proplists:get_value(port, Opts, ?default_port)}};
+                        port = proplists:get_value(port, Opts, ?default_port),
+                        set_timestamp = proplists:get_value(set_timestamp, Opts, true)}};
         {error, Reason} ->
             {stop, Reason}
     end.

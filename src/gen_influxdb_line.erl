@@ -6,10 +6,8 @@
 -define(equal_sign, <<"=">>).
 -define(space, <<" ">>).
 
--export([
-    encode/1,
-    encode/2
-]).
+-export([ encode/1
+        , encode/2]).
 
 encode(Points) ->
     encode(Points, []).

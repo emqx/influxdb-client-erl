@@ -26,8 +26,10 @@
 encode(Points) ->
     encode(Points, []).
 
-encode(Points, Opts) ->
-    try encode_(Points, Opts) of
+encode(Point, Opts) when is_map(Point) ->
+    encode([Point], Opts);
+encode(Points, Opts) when is_list(Points) ->
+    try encode_([atom_key_map(Point) || Point <- Points], Opts) of
         Encoded -> Encoded
     catch
         error : Reason ->
@@ -99,12 +101,16 @@ encode_tags([{Key, Value} | Rest]) ->
 encode_tag(Key, Value) ->
     [",", escape_special_chars(tag_key, to_binary(Key)), "=", escape_special_chars(tag_value, to_binary(Value))].
 
-encode_timestamp(undefined) ->
-    undefined;
 encode_timestamp(Timestamp) when is_integer(Timestamp) ->
     erlang:integer_to_binary(Timestamp);
+encode_timestamp(Timestamp) when is_binary(Timestamp) ->
+    try erlang:binary_to_integer(Timestamp) of
+        _ -> Timestamp
+    catch
+        error:_Reason -> undefined
+    end;
 encode_timestamp(_) ->
-    error(invalid_type).
+    undefined.
 
 escape_special_chars(field_value, String) when is_binary(String) ->
     escape_special_chars([?backslash], String);
@@ -125,3 +131,8 @@ to_binary(Data) when is_atom(Data) ->
     erlang:atom_to_binary(Data, utf8);
 to_binary(_) ->
     error(invalid_type).
+
+atom_key_map(BinKeyMap) when is_map(BinKeyMap) ->
+    maps:fold(fun(K, V, Acc) ->
+            Acc#{binary_to_atom(K, utf8) => V}
+        end, #{}, BinKeyMap).

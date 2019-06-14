@@ -115,10 +115,10 @@ encode_timestamp(_) ->
 escape_special_chars(field_value, String) when is_binary(String) ->
     escape_special_chars([?backslash], String);
 escape_special_chars(measurement, String) when is_binary(String) ->
-    escape_special_chars([?comma, ?space], String);
+    escape_special_chars([?backslash, ?comma, ?space], String);
 escape_special_chars(Element, String)
   when is_binary(String), Element =:= tag_key; Element =:= tag_value; Element =:= field_key ->
-    escape_special_chars([?comma, ?equal_sign, ?space], String);
+    escape_special_chars([?backslash, ?comma, ?equal_sign, ?space], String);
 
 escape_special_chars(Pattern, String) when is_list(Pattern) ->
     binary:replace(String, Pattern, <<"\\">>, [global, {insert_replaced, 1}]).
@@ -133,6 +133,8 @@ to_binary(_) ->
     error(invalid_type).
 
 atom_key_map(BinKeyMap) when is_map(BinKeyMap) ->
-    maps:fold(fun(K, V, Acc) ->
-            Acc#{binary_to_atom(K, utf8) => V}
-        end, #{}, BinKeyMap).
+    maps:fold(fun(K, V, Acc) when is_binary(K) ->
+                  Acc#{binary_to_atom(K, utf8) => V};
+                 (K, V, Acc) ->
+                  Acc#{K => V}
+              end, #{}, BinKeyMap).

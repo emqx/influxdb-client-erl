@@ -99,7 +99,7 @@ encode_tags([{Key, Value} | Rest]) ->
     [encode_tag(Key, Value), encode_tags(Rest)].
 
 encode_tag(Key, Value) ->
-    [",", escape_special_chars(tag_key, to_binary(Key)), "=", escape_special_chars(tag_value, to_binary(Value))].
+    [",", escape_special_chars(tag_key, to_binary(Key)), "=", escape_special_chars(tag_value, to_binary2(Value))].
 
 encode_timestamp(Timestamp) when is_integer(Timestamp) ->
     erlang:integer_to_binary(Timestamp);
@@ -131,6 +131,13 @@ to_binary(Data) when is_atom(Data) ->
     erlang:atom_to_binary(Data, utf8);
 to_binary(_) ->
     error(invalid_type).
+
+to_binary2(Data) when is_integer(Data) ->
+    erlang:integer_to_binary(Data);
+to_binary2(Data) when is_float(Data) ->
+    erlang:float_to_binary(Data, [{decimals, 8}, compact]);
+to_binary2(Data) ->
+    to_binary(Data).
 
 atom_key_map(BinKeyMap) when is_map(BinKeyMap) ->
     maps:fold(fun(K, V, Acc) when is_binary(K) ->

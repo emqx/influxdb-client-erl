@@ -12,7 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(gen_influxdb_sup).
+-module(influxdb_sup).
 -behaviour(supervisor).
 
 -export([start_link/0]).

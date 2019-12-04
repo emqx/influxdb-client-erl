@@ -24,7 +24,9 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
          code_change/3]).
 
--export([write/2, write/3]).
+-export([ write/2
+        , write/3
+        , ping/1]).
 
 -define(APP, influxdb).
 
@@ -72,6 +74,10 @@ write(Pid, Points) ->
 write(Pid, Points, Options) ->
     gen_server:call(Pid, {write, Points, Options}).
 
+-spec(ping(pid()) -> ok | {erro, atom()}).
+ping(Pid) ->
+    gen_server:call(Pid, ping).
+
 % %% gen_server.
 
 init([Opts]) ->
@@ -97,6 +103,16 @@ handle_call({write, Points, Options}, _From, State = #state{set_timestamp = SetT
             {reply, {error, Reason}, State};
         Data ->
             {reply, gen_udp:send(Socket, Host, Port, Data), State}
+    end;
+
+handle_call(ping, _From, State) ->
+    case http_request(get, 
+                      {url("http://127.0.0.1:8086/ping",[{"verbose", "true"}]), []}) of
+        {ok, Headers, _Body} ->
+            {reply, {ok, [{build_type, build_type(proplists:get_value("x-influxdb-build", Headers))},
+                          {version, proplists:get_value("x-influxdb-version", Headers)}]}, State};
+        {error, Reason} ->
+            {reply, {error, Reason}, State}
     end;
 
 handle_call(_Request, _From, State) ->
@@ -126,3 +142,35 @@ getaddr(Host) ->
 
 addr_family({_, _, _, _}) -> inet;
 addr_family({_, _, _, _, _, _, _, _}) -> inet6.
+
+http_request(Method, Request) ->
+    parse_response(httpc:request(Method, Request, [], [])).
+
+url(Url, QueryParams) ->
+    NewUrl = lists:foldl(fun({K, V}, Acc) ->
+                    Acc ++ http_uri:encode(K) ++ "=" ++ http_uri:encode(V) ++ "&"
+                end, Url ++ "?", QueryParams),
+    case lists:last(NewUrl) of
+        "&" -> lists:droplast(NewUrl);
+        _ -> NewUrl
+    end.
+
+parse_response({ok, {{_, Code, _}, Headers, Body}}) ->
+    parse_response({ok, Code, Headers, Body});
+parse_response({ok, {Code, Body}}) ->
+    parse_response({ok, Code, [], Body});
+parse_response({ok, 200, Headers, Body}) ->
+    {ok, Headers, Body};
+parse_response({ok, 201, Headers, Body}) ->
+    {ok, Headers, Body};
+parse_response({ok, 204, Headers, _Body}) ->
+    {ok, Headers, []};
+parse_response({ok, Code, Headers, Body}) ->
+    {error, {Code, Headers, Body}};
+parse_response({error, Reason}) ->
+    {error, Reason}.
+
+build_type("OSS") ->
+    open_source;
+build_type(_) ->
+    enterprise.

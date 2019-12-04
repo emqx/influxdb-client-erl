@@ -12,7 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(gen_influxdb).
+-module(influxdb).
 -behaviour(gen_server).
 
 -import(proplists, [get_value/3]).
@@ -26,7 +26,7 @@
 
 -export([write/2, write/3]).
 
--define(APP, gen_influxdb).
+-define(APP, influxdb).
 
 -define(default_host, '127.0.0.1').
 -define(default_port, 8089).
@@ -92,7 +92,7 @@ handle_call({write, Points, Options}, _From, State = #state{set_timestamp = SetT
                                                             host = Host,
                                                             port = Port}) ->
     LineOpts = [{set_timestamp, get_value(set_timestamp, Options, SetTimestamp)}],
-    case gen_influxdb_line:encode(Points, LineOpts) of
+    case influxdb_line:encode(Points, LineOpts) of
         {error, Reason} ->
             {reply, {error, Reason}, State};
         Data ->

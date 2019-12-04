@@ -12,7 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(gen_influxdb_line).
+-module(influxdb_line).
 
 -define(backslash, <<"\\">>).
 -define(comma, <<",">>).

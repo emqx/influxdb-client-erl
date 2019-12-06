@@ -26,7 +26,8 @@
 
 -export([ write/2
         , write/3
-        , ping/1]).
+        , ping/1
+        , ping/2]).
 
 -define(APP, influxdb).
 
@@ -76,7 +77,15 @@ write(Pid, Points, Options) ->
 
 -spec(ping(pid()) -> ok | {erro, atom()}).
 ping(Pid) ->
-    gen_server:call(Pid, ping).
+    ping(Pid, []).
+
+-spec(ping(Pid, Options) -> ok | {erro, atom()}
+    when Pid :: pid(),
+         Options :: [Option],
+         Option ::  {ip, inet:ip_address()}
+                  | {port, inet:port_number()}).
+ping(Pid, Options) ->
+    gen_server:call(Pid, {ping, Options}).
 
 % %% gen_server.
 
@@ -105,9 +114,11 @@ handle_call({write, Points, Options}, _From, State = #state{set_timestamp = SetT
             {reply, gen_udp:send(Socket, Host, Port, Data), State}
     end;
 
-handle_call(ping, _From, State) ->
+handle_call({ping, Opts}, _From, State) ->
+    IP = inet:ntoa(proplist:get_value(host, Opts, {127, 0, 0, 1})),
+    Port = erlang:integer_to_list(proplist:get_value(port, Opts, 8086)),
     case http_request(get, 
-                      {url("http://127.0.0.1:8086/ping",[{"verbose", "true"}]), []}) of
+                      {url("http://" ++ IP ++ ":" ++ Port ++ "/ping",[{"verbose", "true"}]), []}) of
         {ok, Headers, _Body} ->
             {reply, {ok, [{build_type, build_type(proplists:get_value("x-influxdb-build", Headers))},
                           {version, proplists:get_value("x-influxdb-version", Headers)}]}, State};

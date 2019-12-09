@@ -1,0 +1,7 @@
+{application,influxdb,
+             [{description,"InfluxDB Client"},
+              {vsn,"git"},
+              {modules,[]},
+              {registered,[influxdb_sup]},
+              {applications,[kernel,stdlib]},
+              {mod,{influxdb_app,[]}}]}.

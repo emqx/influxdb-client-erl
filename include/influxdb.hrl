@@ -44,10 +44,4 @@
                    | {keyfile, file:filename()}
                    | {certfile, file:filename()}
                    | {cacertfile, file:filename()}
-                   | {dhfile, file:filename()}
-                   | {verify, verify_none | verify_peer}
-                   | {fail_if_no_peer_cert, boolean()}
-                   | {ciphers, string()}
-                   | {secure_renegotiate, boolean()}
-                   | {reuse_sessions, boolean() | save}
-                   | {honor_cipher_order, boolean()}.
+                   | {ciphers, string()}.

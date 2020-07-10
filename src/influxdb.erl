@@ -73,7 +73,7 @@ start_link(Opts) ->
                     fields := map(),
                     timestamp => integer()}).
 write(Pid, Points) ->
-    gen_server:call(Pid, {write, Points}).
+    gen_server:cast(Pid, {write, Points}).
 
 -spec(is_running(pid()) -> boolean()).
 is_running(Pid) ->
@@ -89,24 +89,24 @@ init([Opts]) ->
     UDPOpts = merge_default_opts(get_value(udp_opts, Opts, []), ?DEFAULT_UDP_OPTS),
     HTTPOpts = merge_default_opts(get_value(http_opts, Opts, []), ?DEFAULT_HTTP_OPTS),
     Scheme = case get_value(https_enabled, HTTPOpts) of
-                 true -> "https";
-                 false -> "http"
+                 true -> "https://";
+                 false -> "http://"
              end,
-    URL = Scheme ++ get_value(host, HTTPOpts) ++ ":" ++ get_value(port, HTTPOpts),
+    URL = Scheme ++ get_value(host, HTTPOpts) ++ ":" ++ integer_to_list(get_value(port, HTTPOpts)),
     State = #state{set_timestamp = SetTimestamp,
                    precision = Precision,
                    batch_size = BatchSize,
                    write_protocol = WriteProtocol,
-                   http_opts = maps:from_list([{url, URL} | HTTPOpts]),
+                   http_opts = [{url, URL} | HTTPOpts],
                    udp_socket = undefined},
     case WriteProtocol of
         udp ->
             {ok, AddressFamily, IPAddress} = getaddr(get_value(host, UDPOpts)),
             {ok, Socket} = gen_udp:open(0, [binary, {active, false}, AddressFamily]),
-            State#state{udp_opts = maps:put(host, IPAddress, maps:from_list(UDPOpts)),
-                        udp_socket = Socket};
+            {ok, State#state{udp_opts = lists:keyreplace(host, 1, UDPOpts, {host, IPAddress}),
+                             udp_socket = Socket}};
         http ->
-            State
+            {ok, State}
     end.
 
 handle_call(is_running, _From, State = #state{http_opts = HTTPOpts}) ->
@@ -140,22 +140,23 @@ handle_cast({write, Points}, State = #state{set_timestamp = SetTimestamp,
         Data ->
             case WriteProtocol of
                 udp ->
-                    case gen_udp:send(Socket, get_value(ip_addr, UDPOpts), get_value(port, UDPOpts), Data) of
+                    case gen_udp:send(Socket, get_value(host, UDPOpts), get_value(port, UDPOpts), Data) of
                         {error, Reason} ->
                             logger:error("[InfluxDB] Write ~p failed: ~p", [NPoints, Reason]);
                         _ ->
-                            ok
+                            logger:debug("[InfluxDB] Write ~p successfully", [NPoints])
                     end;
                 http ->
                     URL = filename:join([get_value(url, HTTPOpts), "write"]),
-                    QueryParams = may_append_authentication_params([{"db", get_value(database, HTTPOpts)}], HTTPOpts),                                              
+                    QueryParams = may_append_authentication_params([{"db", get_value(database, HTTPOpts)},
+                                                                    {"precision", Precision}], HTTPOpts),                                              
                     HTTPOptions = case get_value(https_enabled, HTTPOpts) of
                                     false -> [{ssl, get_value(ssl, HTTPOpts)}];
                                     true -> []
                                 end,
                     case httpc_request(post, URL, QueryParams, [], Data, HTTPOptions) of
                         {ok, {{_, 204, _}, _, _}} ->
-                            ok;
+                            logger:debug("[InfluxDB] Write ~p successfully", [NPoints]);
                         {ok, {{_, StatusCode, ReasonPhrase}, _, Body}} ->
                             logger:error("[InfluxDB] Write ~p failed: ~p ~s, Details: ~s", [NPoints, StatusCode, ReasonPhrase, Body]);
                         {error, Reason} ->
@@ -218,7 +219,7 @@ httpc_request(Method, URL, QueryParams, Headers, Body, HTTPOptions) ->
     httpc:request(Method, {NewURL, Headers, "application/json", Body}, HTTPOptions, []).
 
 append_query_params_to_url(URL, QueryParams) ->
-    do_append_query_params_to_url(URL + "?", QueryParams).
+    do_append_query_params_to_url(URL ++ "?", QueryParams).
 
 do_append_query_params_to_url(URL, [{K, V}]) ->
     URL ++ http_uri:encode(K) ++ "=" ++ http_uri:encode(V);

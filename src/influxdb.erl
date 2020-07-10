@@ -149,7 +149,7 @@ handle_cast({write, Points}, State = #state{set_timestamp = SetTimestamp,
                 http ->
                     URL = filename:join([get_value(url, HTTPOpts), "write"]),
                     QueryParams = may_append_authentication_params([{"db", get_value(database, HTTPOpts)},
-                                                                    {"precision", Precision}], HTTPOpts),                                              
+                                                                    {"precision", atom_to_list(Precision)}], HTTPOpts),                                              
                     HTTPOptions = case get_value(https_enabled, HTTPOpts) of
                                     false -> [{ssl, get_value(ssl, HTTPOpts)}];
                                     true -> []

@@ -86,8 +86,8 @@ init([Opts]) ->
     Precision = get_value(precision, Opts, ?DEFAULT_PRECISION),
     BatchSize = get_value(batch_size, Opts, ?DEFAULT_BATCH_SIZE),
     WriteProtocol = get_value(write_protocol, Opts, ?DEFAULT_WRITE_PROTOCOL),
-    UDPOpts = merge_default_opts(get_value(udp, Opts, []), ?DEFAULT_UDP_OPTS),
-    HTTPOpts = merge_default_opts(get_value(http, Opts, []), ?DEFAULT_HTTP_OPTS),
+    UDPOpts = merge_default_opts(get_value(udp_opts, Opts, []), ?DEFAULT_UDP_OPTS),
+    HTTPOpts = merge_default_opts(get_value(http_opts, Opts, []), ?DEFAULT_HTTP_OPTS),
     Scheme = case get_value(https_enabled, HTTPOpts) of
                  true -> "https";
                  false -> "http"

@@ -42,17 +42,19 @@ encode_(Points, Opts) when is_list(Points), length(Points) > 0 ->
                 end, [], Points);
 
 encode_(Point = #{measurement := Measurement, fields := Fields}, Opts) ->
-    Timestamp = case proplists:get_value(set_timestamp, Opts, false) of
-                    false -> undefined;
-                    true -> erlang:system_time(nanosecond)
-                end,
     [encode_measurement(Measurement),
      encode_tags(maps:get(tags, Point, #{})),
      " ", encode_fields(Fields),
-     case encode_timestamp(maps:get(timestamp, Point, Timestamp)) of
-         undefined -> [];
-         Encoded -> [" ", Encoded]
-     end,
+     case maps:get(timestamp, Point, undefined) of
+        undefined ->
+            case proplists:get_value(set_timestamp, Opts, false) of
+                false -> [];
+                true ->
+                    [" ", encode_timestamp(timestamp(proplists:get_value(precision, Opts, ms)))]
+            end;
+        Timestamp ->
+            [" ", encode_timestamp(Timestamp)]
+    end,
      "\n"];
 
 encode_(_Point, _Opts) ->
@@ -102,15 +104,20 @@ encode_tag(Key, Value) ->
     [",", escape_special_chars(tag_key, to_binary(Key)), "=", escape_special_chars(tag_value, to_binary2(Value))].
 
 encode_timestamp(Timestamp) when is_integer(Timestamp) ->
-    erlang:integer_to_binary(Timestamp);
-encode_timestamp(Timestamp) when is_binary(Timestamp) ->
-    try erlang:binary_to_integer(Timestamp) of
-        _ -> Timestamp
-    catch
-        error:_Reason -> undefined
-    end;
-encode_timestamp(_) ->
-    undefined.
+    erlang:integer_to_binary(Timestamp).
+
+timestamp(ns) ->
+    erlang:system_time(nanosecond);
+timestamp(u) ->
+    erlang:system_time(microsecond);
+timestamp(ms) ->
+    erlang:system_time(millisecond);
+timestamp(s) ->
+    erlang:system_time(second);
+timestamp(m) ->
+    erlang:system_time(second) div 60;
+timestamp(h) ->
+    erlang:system_time(second) div 3600.
 
 escape_special_chars(field_value, String) when is_binary(String) ->
     escape_special_chars([?backslash], String);

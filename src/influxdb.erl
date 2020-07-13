@@ -38,13 +38,9 @@
 -define(APP, influxdb).
 
 -record(state, {
-    set_timestamp = ?DEFAULT_SET_TIMESTAMP :: boolean(),
-
-    precision = ?DEFAULT_PRECISION :: precision(),
+    write_protocol = ?DEFAULT_WRITE_PROTOCOL :: http | udp,
 
     batch_size = ?DEFAULT_BATCH_SIZE :: integer(),
-
-    write_protocol = ?DEFAULT_WRITE_PROTOCOL :: http | udp,
 
     udp_socket = undefined :: gen_udp:socket() | undefined,
 
@@ -80,24 +76,16 @@ is_running(Pid) ->
     gen_server:call(Pid, is_running).
 
 % %% gen_server.
-
 init([Opts]) ->
-    SetTimestamp = get_value(set_timestamp, Opts, ?DEFAULT_SET_TIMESTAMP),
-    Precision = get_value(precision, Opts, ?DEFAULT_PRECISION),
-    BatchSize = get_value(batch_size, Opts, ?DEFAULT_BATCH_SIZE),
     WriteProtocol = get_value(write_protocol, Opts, ?DEFAULT_WRITE_PROTOCOL),
+    BatchSize = get_value(batch_size, Opts, ?DEFAULT_BATCH_SIZE),
     UDPOpts = merge_default_opts(get_value(udp_opts, Opts, []), ?DEFAULT_UDP_OPTS),
-    HTTPOpts = merge_default_opts(get_value(http_opts, Opts, []), ?DEFAULT_HTTP_OPTS),
-    Scheme = case get_value(https_enabled, HTTPOpts) of
-                 true -> "https://";
-                 false -> "http://"
-             end,
-    URL = Scheme ++ get_value(host, HTTPOpts) ++ ":" ++ integer_to_list(get_value(port, HTTPOpts)),
-    State = #state{set_timestamp = SetTimestamp,
-                   precision = Precision,
+    HTTPOpts0 = merge_default_opts(get_value(http_opts, Opts, []), ?DEFAULT_HTTP_OPTS),
+    URL = make_url(HTTPOpts0),
+    HTTPOpts = lists:keyreplace(precision, 1, [{url, URL} | HTTPOpts0], {precision, to_string(get_value(precision, HTTPOpts0))}),
+    State = #state{write_protocol = WriteProtocol,
                    batch_size = BatchSize,
-                   write_protocol = WriteProtocol,
-                   http_opts = [{url, URL} | HTTPOpts],
+                   http_opts = HTTPOpts,
                    udp_socket = undefined},
     case WriteProtocol of
         udp ->
@@ -110,13 +98,14 @@ init([Opts]) ->
     end.
 
 handle_call(is_running, _From, State = #state{http_opts = HTTPOpts}) ->
-    URL = filename:join([get_value(url, HTTPOpts), "ping"]),
+    URL = string:join([get_value(url, HTTPOpts), "ping"], "/"),
     QueryParams = may_append_authentication_params([{"verbose", "true"}], HTTPOpts),    
     HTTPOptions = case get_value(https_enabled, HTTPOpts) of
                       false -> [{ssl, get_value(ssl, HTTPOpts)}];
                       true -> []
                   end,
-    case httpc_request(get, URL, QueryParams, [], <<>>, HTTPOptions) of
+    NewURL = append_query_params_to_url(URL, QueryParams),
+    case httpc:request(get, {NewURL, []}, HTTPOptions, []) of
         {ok, {{_, 200, _}, _, _}} -> {reply, true, State};
         _ -> {reply, false, State}
     end;
@@ -124,17 +113,13 @@ handle_call(is_running, _From, State = #state{http_opts = HTTPOpts}) ->
 handle_call(_Request, _From, State) ->
 	{reply, ignored, State}.
 
-handle_cast({write, Points}, State = #state{set_timestamp = SetTimestamp,
-                                            precision = Precision,
-                                            write_protocol = WriteProtocol,
+handle_cast({write, Points}, State = #state{write_protocol = WriteProtocol,
                                             batch_size = BatchSize,
                                             udp_socket = Socket,
                                             udp_opts = UDPOpts,
                                             http_opts = HTTPOpts}) ->
     NPoints = drain_points(BatchSize - length(Points), Points),
-    LineOpts = [{set_timestamp, SetTimestamp},
-                {precision, Precision}],
-    case influxdb_line:encode(NPoints, LineOpts) of
+    case influxdb_line:encode(NPoints) of
         {error, Reason} ->
             logger:error("[InfluxDB] Encode ~p failed: ~p", [NPoints, Reason]);
         Data ->
@@ -147,14 +132,15 @@ handle_cast({write, Points}, State = #state{set_timestamp = SetTimestamp,
                             logger:debug("[InfluxDB] Write ~p successfully", [NPoints])
                     end;
                 http ->
-                    URL = filename:join([get_value(url, HTTPOpts), "write"]),
+                    URL = string:join([get_value(url, HTTPOpts), "write"], "/"),
                     QueryParams = may_append_authentication_params([{"db", get_value(database, HTTPOpts)},
-                                                                    {"precision", atom_to_list(Precision)}], HTTPOpts),                                              
+                                                                    {"precision", get_value(precision, HTTPOpts)}], HTTPOpts),                                              
                     HTTPOptions = case get_value(https_enabled, HTTPOpts) of
                                     false -> [{ssl, get_value(ssl, HTTPOpts)}];
                                     true -> []
                                 end,
-                    case httpc_request(post, URL, QueryParams, [], Data, HTTPOptions) of
+                    NewURL = append_query_params_to_url(URL, QueryParams),
+                    case httpc:request(post, {NewURL, [], "text/plain", iolist_to_binary(Data)}, HTTPOptions, []) of
                         {ok, {{_, 204, _}, _, _}} ->
                             logger:debug("[InfluxDB] Write ~p successfully", [NPoints]);
                         {ok, {{_, StatusCode, ReasonPhrase}, _, Body}} ->
@@ -181,6 +167,19 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 %% Internal functions
 %%====================================================================
+
+make_url(HTTPOpts) ->
+    Host = binary_to_list(case list_to_binary(get_value(host, HTTPOpts)) of
+                              <<"http://", Host0/binary>> -> Host0;
+                              <<"https://", Host0/binary>> -> Host0;
+                              Host0 -> Host0
+                          end),
+    Port = integer_to_list(get_value(port, HTTPOpts)),
+    Scheme = case get_value(https_enabled, HTTPOpts) of
+                true -> "https://";
+                false -> "http://"
+            end,
+    Scheme ++ Host ++ ":" ++ Port.
 
 merge_default_opts(Opts, Default) when is_list(Opts) ->
     merge_default_opts(maps:from_list(Opts), Default);
@@ -214,10 +213,6 @@ may_append_authentication_params(QueryParams0, AuthParams) ->
                    {"p", get_value(password, AuthParams, undefined)} | QueryParams0],
     lists:dropwhile(fun({_, K}) -> K =:= undefined end, QueryParams).
 
-httpc_request(Method, URL, QueryParams, Headers, Body, HTTPOptions) ->
-    NewURL = append_query_params_to_url(URL, QueryParams),
-    httpc:request(Method, {NewURL, Headers, "application/json", Body}, HTTPOptions, []).
-
 append_query_params_to_url(URL, QueryParams) ->
     do_append_query_params_to_url(URL ++ "?", QueryParams).
 
@@ -236,3 +231,10 @@ drain_points(Cnt, Acc) ->
     after 0 ->
         lists:append(lists:reverse(Acc))
     end.
+
+to_string(Bin) when is_binary(Bin) ->
+    binary_to_list(Bin);
+to_string(Str) when is_list(Str) ->
+    Str;
+to_string(Atom) when is_atom(Atom) ->
+    atom_to_list(Atom).

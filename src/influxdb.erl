@@ -101,8 +101,8 @@ handle_call(is_running, _From, State = #state{http_opts = HTTPOpts}) ->
     URL = string:join([get_value(url, HTTPOpts), "ping"], "/"),
     QueryParams = may_append_authentication_params([{"verbose", "true"}], HTTPOpts),    
     HTTPOptions = case get_value(https_enabled, HTTPOpts) of
-                      false -> [{ssl, get_value(ssl, HTTPOpts)}];
-                      true -> []
+                      false -> [];
+                      true -> [{ssl, get_value(ssl, HTTPOpts, [])}]
                   end,
     NewURL = append_query_params_to_url(URL, QueryParams),
     case httpc:request(get, {NewURL, []}, HTTPOptions, []) of

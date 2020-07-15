@@ -20,44 +20,34 @@
 -define(equal_sign, <<"=">>).
 -define(space, <<" ">>).
 
--export([ encode/1
-        , encode/2]).
+-export([encode/1]).
 
-encode(Points) ->
-    encode(Points, []).
-
-encode(Point, Opts) when is_map(Point) ->
-    encode([Point], Opts);
-encode(Points, Opts) when is_list(Points) ->
-    try encode_([atom_key_map(Point) || Point <- Points], Opts) of
+encode(Point) when is_map(Point) ->
+    encode([Point]);
+encode(Points) when is_list(Points) ->
+    try encode_([atom_key_map(Point) || Point <- Points]) of
         Encoded -> Encoded
     catch
         error : Reason ->
             {error, Reason}
     end.
 
-encode_(Points, Opts) when is_list(Points), length(Points) > 0 ->
+encode_(Points) when is_list(Points), length(Points) > 0 ->
     lists:foldr(fun(Point, Acc) when is_map(Point) ->
-                    [encode_(Point, Opts) | Acc]
+                    [encode_(Point) | Acc]
                 end, [], Points);
 
-encode_(Point = #{measurement := Measurement, fields := Fields}, Opts) ->
+encode_(Point = #{measurement := Measurement, fields := Fields}) ->
     [encode_measurement(Measurement),
-     encode_tags(maps:get(tags, Point, #{})),
-     " ", encode_fields(Fields),
-     case maps:get(timestamp, Point, undefined) of
-        undefined ->
-            case proplists:get_value(set_timestamp, Opts, false) of
-                false -> [];
-                true ->
-                    [" ", encode_timestamp(timestamp(proplists:get_value(precision, Opts, ms)))]
-            end;
-        Timestamp ->
-            [" ", encode_timestamp(Timestamp)]
-    end,
-     "\n"];
+      encode_tags(maps:get(tags, Point, #{})),
+      " ", encode_fields(Fields),
+      case maps:get(timestamp, Point, undefined) of
+          undefined -> [];
+          Timestamp -> [" ", encode_timestamp(Timestamp)]
+      end,
+      "\n"];
 
-encode_(_Point, _Opts) ->
+encode_(_Point) ->
     error(invalid_point).
 
 encode_measurement(Measurement) ->
@@ -105,19 +95,6 @@ encode_tag(Key, Value) ->
 
 encode_timestamp(Timestamp) when is_integer(Timestamp) ->
     erlang:integer_to_binary(Timestamp).
-
-timestamp(ns) ->
-    erlang:system_time(nanosecond);
-timestamp(u) ->
-    erlang:system_time(microsecond);
-timestamp(ms) ->
-    erlang:system_time(millisecond);
-timestamp(s) ->
-    erlang:system_time(second);
-timestamp(m) ->
-    erlang:system_time(second) div 60;
-timestamp(h) ->
-    erlang:system_time(second) div 3600.
 
 escape_special_chars(field_value, String) when is_binary(String) ->
     escape_special_chars([?backslash], String);

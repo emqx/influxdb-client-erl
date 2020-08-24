@@ -63,7 +63,7 @@ start_link(Opts) ->
 
 -spec(write(Pid, Points) -> ok | {erro, atom()}
     when Pid :: pid(),
-         Points :: [Point] | Point,
+         Points :: [Point],
          Point :: #{measurement := atom() | binary() | list(),
                     tags => map(),
                     fields := map(),
@@ -118,7 +118,7 @@ handle_cast({write, Points}, State = #state{write_protocol = WriteProtocol,
                                             udp_socket = Socket,
                                             udp_opts = UDPOpts,
                                             http_opts = HTTPOpts}) ->
-    NPoints = drain_points(BatchSize - length(Points), Points),
+    NPoints = drain_points(BatchSize - length(Points), [Points]),
     case influxdb_line:encode(NPoints) of
         {error, Reason} ->
             logger:error("[InfluxDB] Encode ~p failed: ~p", [NPoints, Reason]);

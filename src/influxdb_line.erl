@@ -97,12 +97,12 @@ encode_timestamp(Timestamp) when is_integer(Timestamp) ->
     erlang:integer_to_binary(Timestamp).
 
 escape_special_chars(field_value, String) when is_binary(String) ->
-    escape_special_chars([?backslash], String);
+    escape_special_chars([?double_quote], String);
 escape_special_chars(measurement, String) when is_binary(String) ->
-    escape_special_chars([?backslash, ?comma, ?space], String);
+    escape_special_chars([?comma, ?space], String);
 escape_special_chars(Element, String)
   when is_binary(String), Element =:= tag_key; Element =:= tag_value; Element =:= field_key ->
-    escape_special_chars([?backslash, ?comma, ?equal_sign, ?space], String);
+    escape_special_chars([?comma, ?equal_sign, ?space], String);
 
 escape_special_chars(Pattern, String) when is_list(Pattern) ->
     binary:replace(String, Pattern, <<"\\">>, [global, {insert_replaced, 1}]).

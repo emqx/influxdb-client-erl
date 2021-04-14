@@ -62,7 +62,7 @@ start_link() ->
 start_link(Opts) ->
     gen_server:start_link(?MODULE, [Opts], []).
 
--spec(write(Pid, Points) -> ok | {erro, atom()}
+-spec(write(Pid, Points) -> ok | {error, atom()}
     when Pid :: pid(),
          Points :: [Point],
          Point :: #{measurement := atom() | binary() | list(),
@@ -72,7 +72,7 @@ start_link(Opts) ->
 write(Pid, Points) ->
     gen_server:cast(Pid, {write, Points}).
 
--spec(write_sync(Pid, Points) -> ok | {erro, term()}
+-spec(write_sync(Pid, Points) -> ok | {error, term()}
 when Pid :: pid(),
      Points :: [Point],
      Point :: #{measurement := atom() | binary() | list(),
@@ -126,7 +126,7 @@ handle_call({write, Points}, _From, State) ->
         {ok, NewState} -> 
             {reply, ok, NewState};
         {fail, Reason, NewState} -> 
-            {reply, {erro, Reason}, NewState}
+            {reply, {error, Reason}, NewState}
     end;
 
 handle_call(_Request, _From, State) ->

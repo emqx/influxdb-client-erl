@@ -32,6 +32,7 @@
         ]).
 
 -export([ write/2
+        , write_sync/2
         , is_running/1
         ]).
 
@@ -70,6 +71,16 @@ start_link(Opts) ->
                     timestamp => integer()}).
 write(Pid, Points) ->
     gen_server:cast(Pid, {write, Points}).
+
+-spec(write_sync(Pid, Points) -> ok | {erro, term()}
+when Pid :: pid(),
+     Points :: [Point],
+     Point :: #{measurement := atom() | binary() | list(),
+                tags => map(),
+                fields := map(),
+                timestamp => integer()}).
+write_sync(Pid, Points) ->
+    gen_server:call(Pid, {write, Points}).
 
 -spec(is_running(pid()) -> boolean()).
 is_running(Pid) ->
@@ -110,45 +121,23 @@ handle_call(is_running, _From, State = #state{http_opts = HTTPOpts}) ->
         _ -> {reply, false, State}
     end;
 
-handle_call(_Request, _From, State) ->
-	{reply, ignored, State}.
+handle_call({write, Points}, _From, State) ->
+    case do_write(Points, State) of
+        {ok, NewState} -> 
+            {reply, ok, NewState};
+        {fail, Reason, NewState} -> 
+            {reply, {erro, Reason}, NewState}
+    end;
 
-handle_cast({write, Points}, State = #state{write_protocol = WriteProtocol,
-                                            batch_size = BatchSize,
-                                            udp_socket = Socket,
-                                            udp_opts = UDPOpts,
-                                            http_opts = HTTPOpts}) ->
-    NPoints = drain_points(BatchSize - length(Points), [Points]),
-    case influxdb_line:encode(NPoints) of
-        {error, Reason} ->
-            logger:error("[InfluxDB] Encode ~p failed: ~p", [NPoints, Reason]);
-        Data ->
-            case WriteProtocol of
-                udp ->
-                    case gen_udp:send(Socket, get_value(host, UDPOpts), get_value(port, UDPOpts), Data) of
-                        {error, Reason} ->
-                            logger:error("[InfluxDB] Write ~p failed: ~p", [NPoints, Reason]);
-                        _ ->
-                            logger:debug("[InfluxDB] Write ~p successfully", [NPoints])
-                    end;
-                http ->
-                    URL = string:join([get_value(url, HTTPOpts), "write"], "/"),
-                    QueryParams = may_append_authentication_params([{"db", get_value(database, HTTPOpts)},
-                                                                    {"precision", get_value(precision, HTTPOpts)}], HTTPOpts),                                              
-                    HTTPOptions = case get_value(https_enabled, HTTPOpts) of
-                                    false -> [{ssl, get_value(ssl, HTTPOpts)}];
-                                    true -> []
-                                end,
-                    NewURL = append_query_params_to_url(URL, QueryParams),
-                    case httpc:request(post, {NewURL, [], "text/plain", iolist_to_binary(Data)}, HTTPOptions, []) of
-                        {ok, {{_, 204, _}, _, _}} ->
-                            logger:debug("[InfluxDB] Write ~p successfully", [NPoints]);
-                        {ok, {{_, StatusCode, ReasonPhrase}, _, Body}} ->
-                            logger:error("[InfluxDB] Write ~p failed: ~p ~s, Details: ~s", [NPoints, StatusCode, ReasonPhrase, Body]);
-                        {error, Reason} ->
-                            logger:error("[InfluxDB] Write ~p failed: ~p", [NPoints, Reason])
-                    end
-            end
+handle_call(_Request, _From, State) ->
+    {reply, ignored, State}.
+
+handle_cast({write, Points}, State) ->
+    case do_write(Points, State) of
+        {ok, NewState} -> 
+            {noreply, NewState};
+        {fail, _Reason, NewSate} -> 
+            {noreply, NewSate}
     end,
     {noreply, State};
 
@@ -167,6 +156,48 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 %% Internal functions
 %%====================================================================
+do_write(Points, State = #state{write_protocol = WriteProtocol,
+                                batch_size = BatchSize,
+                                udp_socket = Socket,
+                                udp_opts = UDPOpts,
+                                http_opts = HTTPOpts})->
+    NPoints = drain_points(BatchSize - length(Points), [Points]),
+    case influxdb_line:encode(NPoints) of
+        {error, Reason} ->
+            logger:error("[InfluxDB] Encode ~p failed: ~p", [NPoints, Reason]),
+            {fail, Reason, State};
+        Data ->
+            case WriteProtocol of
+                udp ->
+                    case gen_udp:send(Socket, get_value(host, UDPOpts), get_value(port, UDPOpts), Data) of
+                        {error, Reason} ->
+                            logger:error("[InfluxDB] Write ~p failed: ~p", [NPoints, Reason]),
+                            {fail, Reason, State};
+                        _ ->
+                            {ok, State}
+                    end;
+                http ->
+                    URL = string:join([get_value(url, HTTPOpts), "write"], "/"),
+                    QueryParams = may_append_authentication_params([{"db", get_value(database, HTTPOpts)},
+                                                                    {"precision", get_value(precision, HTTPOpts)}], HTTPOpts),                                              
+                    HTTPOptions = case get_value(https_enabled, HTTPOpts) of
+                                    false -> [{ssl, get_value(ssl, HTTPOpts)}];
+                                    true -> []
+                                end,
+                    NewURL = append_query_params_to_url(URL, QueryParams),
+                    case httpc:request(post, {NewURL, [], "text/plain", iolist_to_binary(Data)}, HTTPOptions, []) of
+                        {ok, {{_, 204, _}, _, _}} ->
+                            logger:debug("[InfluxDB] Write ~p successfully", [NPoints]),
+                            {ok, State};
+                        {ok, {{_, StatusCode, ReasonPhrase}, _, Body}} ->
+                            logger:error("[InfluxDB] Write ~p failed: ~p ~s, Details: ~s", [NPoints, StatusCode, ReasonPhrase, Body]),
+                            {fail, http_request_fail, State};
+                        {error, Reason} ->
+                            logger:error("[InfluxDB] Write ~p failed: ~p", [NPoints, Reason]),
+                            {fail, Reason, State}
+                    end
+            end
+    end.
 
 make_url(HTTPOpts) ->
     Host = binary_to_list(case list_to_binary(get_value(host, HTTPOpts)) of

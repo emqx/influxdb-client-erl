@@ -70,7 +70,7 @@ start_link(Opts) ->
                     fields := map(),
                     timestamp => integer()}).
 write(Pid, Points) ->
-    gen_server:cast(Pid, {write, Points}).
+    write(Pid, Points, [{schedule, async}]).
 
 -spec(write_sync(Pid, Points) -> ok | {error, term()}
 when Pid :: pid(),
@@ -80,7 +80,23 @@ when Pid :: pid(),
                 fields := map(),
                 timestamp => integer()}).
 write_sync(Pid, Points) ->
-    gen_server:call(Pid, {write, Points}).
+    write(Pid, Points, [{schedule, sync}]).
+
+-spec(write(Pid, Points, Opts) -> ok | {error, atom()}
+    when Pid :: pid(),
+         Points :: [Point],
+         Opts :: [{schedule, async | sync}],
+         Point :: #{measurement := atom() | binary() | list(),
+                    tags => map(),
+                    fields := map(),
+                    timestamp => integer()}).
+write(Pid, Points, Opts) ->
+    case proplists:get_value(schedule, Opts, sync) of
+        sync -> 
+            gen_server:call(Pid, {write, Points});
+        aync ->         
+            gen_server:cast(Pid, {write, Points})
+    end.
 
 -spec(is_running(pid()) -> boolean()).
 is_running(Pid) ->

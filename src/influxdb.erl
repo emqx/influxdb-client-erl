@@ -174,6 +174,7 @@ do_write(Points, State = #state{write_protocol = WriteProtocol,
                             logger:error("[InfluxDB] Write ~p failed: ~p", [NPoints, Reason]),
                             {fail, Reason, State};
                         _ ->
+                            logger:debug("[InfluxDB] Write ~p successfully", [NPoints]),
                             {ok, State}
                     end;
                 http ->
@@ -191,7 +192,7 @@ do_write(Points, State = #state{write_protocol = WriteProtocol,
                             {ok, State};
                         {ok, {{_, StatusCode, ReasonPhrase}, _, Body}} ->
                             logger:error("[InfluxDB] Write ~p failed: ~p ~s, Details: ~s", [NPoints, StatusCode, ReasonPhrase, Body]),
-                            {fail, http_request_fail, State};
+                            {fail, ReasonPhrase, State};
                         {error, Reason} ->
                             logger:error("[InfluxDB] Write ~p failed: ~p", [NPoints, Reason]),
                             {fail, Reason, State}

@@ -36,7 +36,6 @@
         , is_running/1
         ]).
 
--define(APP, influxdb).
 
 -record(state, {
     write_protocol = ?DEFAULT_WRITE_PROTOCOL :: http | udp,
@@ -121,7 +120,9 @@ init([Opts]) ->
             {ok, State#state{udp_opts = lists:keyreplace(host, 1, UDPOpts, {host, IPAddress}),
                              udp_socket = Socket}};
         http ->
-            {ok, State}
+	        application:ensure_all_started(ehttpc),
+            ehttpc_sup:start_pool(?APP, HTTPOpts),
+            {ok, State#state{http_opts = HTTPOpts ++ [{path, make_path(HTTPOpts)}]}}
     end.
 
 handle_call(is_running, _From, State = #state{http_opts = HTTPOpts}) ->
@@ -154,8 +155,7 @@ handle_cast({write, Points}, State) ->
             {noreply, NewState};
         {fail, _Reason, NewSate} -> 
             {noreply, NewSate}
-    end,
-    {noreply, State};
+    end;
 
 handle_cast(_Msg, State) ->
 	{noreply, State}.
@@ -164,7 +164,7 @@ handle_info(_Info, State) ->
 	{noreply, State}.
 
 terminate(_Reason, _State) ->
-	ok.
+    ehttpc_sup:stop_pool(?APP).
 
 code_change(_OldVsn, State, _Extra) ->
 	{ok, State}.
@@ -194,26 +194,31 @@ do_write(Points, State = #state{write_protocol = WriteProtocol,
                             {ok, State}
                     end;
                 http ->
-                    URL = string:join([get_value(url, HTTPOpts), "write"], "/"),
-                    QueryParams = may_append_authentication_params([{"db", get_value(database, HTTPOpts)},
-                                                                    {"precision", get_value(precision, HTTPOpts)}], HTTPOpts),                                              
-                    HTTPOptions = case get_value(https_enabled, HTTPOpts) of
-                                    false -> [{ssl, get_value(ssl, HTTPOpts)}];
-                                    true -> []
-                                end,
-                    NewURL = append_query_params_to_url(URL, QueryParams),
-                    case httpc:request(post, {NewURL, [], "text/plain", iolist_to_binary(Data)}, HTTPOptions, []) of
-                        {ok, {{_, 204, _}, _, _}} ->
+                    case ehttpc_write(Data, HTTPOpts) of
+                        ok ->
                             logger:debug("[InfluxDB] Write ~p successfully", [NPoints]),
-                            {ok, State};
-                        {ok, {{_, StatusCode, ReasonPhrase}, _, Body}} ->
-                            logger:error("[InfluxDB] Write ~p failed: ~p ~s, Details: ~s", [NPoints, StatusCode, ReasonPhrase, Body]),
-                            {fail, ReasonPhrase, State};
-                        {error, Reason} ->
+                            {ok, State}; 
+                        {fail, Reason} ->
                             logger:error("[InfluxDB] Write ~p failed: ~p", [NPoints, Reason]),
-                            {fail, Reason, State}
+                            {fail, Reason}
                     end
             end
+    end.
+
+ehttpc_write(Data, HTTPOpts)->
+    Path = proplists:get_value(path, HTTPOpts),
+    Headers = [{<<"content-type">>, <<"text/plain">>}],
+    case ehttpc:request(ehttpc_pool:pick_worker(?APP), post, {Path, Headers, Data}) of
+        {ok, 204, _} ->
+            ok;
+        {ok, 204, _, _} ->
+            ok;
+        {ok, StatusCode, Reason} ->
+            {fail, {StatusCode, Reason}};
+        {ok, StatusCode, Reason, Body} ->
+            {fail, {StatusCode, Reason, Body}};
+        {error, Reason} ->
+            {fail, Reason}
     end.
 
 make_url(HTTPOpts) ->
@@ -228,6 +233,26 @@ make_url(HTTPOpts) ->
                 false -> "http://"
             end,
     Scheme ++ Host ++ ":" ++ Port.
+
+make_path(HTTPOpts) ->
+    Database = proplists:get_value(database, HTTPOpts),
+    Username = proplists:get_value(username, HTTPOpts),
+    Password = proplists:get_value(password, HTTPOpts),
+    Precision = proplists:get_value(precision, HTTPOpts),
+    List0 = [{<<"db">>, Database}, {<<"u">>, Username}, {<<"p">>, Password}, {<<"precision">>, Precision}],
+    Filter = fun(Arg) -> 
+                case Arg of
+                    {_, undefined} -> false;
+                    {_, _} -> true
+                end
+            end,
+    List = lists:filter(Filter, List0),
+    case length(List) of
+        0 -> 
+            "/write";
+        _ -> 
+            "/write?" ++ uri_string:compose_query(List)
+    end.
 
 merge_default_opts(Opts, Default) when is_list(Opts) ->
     merge_default_opts(maps:from_list(Opts), Default);

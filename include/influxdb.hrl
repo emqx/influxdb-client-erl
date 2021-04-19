@@ -15,6 +15,8 @@
 %%--------------------------------------------------------------------
 
 %% defaults
+-define(APP, influxdb_client).
+
 -define(DEFAULT_WRITE_PROTOCOL, udp).
 -define(DEFAULT_BATCH_SIZE, 32).
 -define(DEFAULT_UDP_OPTS, [{host, "127.0.0,1"},

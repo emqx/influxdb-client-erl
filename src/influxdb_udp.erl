@@ -13,15 +13,27 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 %%--------------------------------------------------------------------
--module(influxdb_sup).
+-module(influxdb_udp).
 
--behaviour(supervisor).
+-export([ write/2
+        , write/3]).
 
--export([ start_link/0
-        , init/1]).
+write(#{pool := Pool}, Data) ->
+    Fun = fun(Worker) ->
+              influxdb_worker_udp:write(Worker, Data)
+          end,
+    try ecpool:with_client(Pool, Fun)
+    catch E:R:S ->
+        logger:error("[InfluxDB] http write fail: ~0p ~0p ~0p", [E, R, S]),
+        {fail, {E, R}}
+    end.
 
-start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
-
-init([]) ->
-    {ok, {#{strategy => one_for_one, intensity => 5, period => 30}, []}}.
+write(#{pool := Pool}, Key, Data) ->
+    Fun = fun(Worker) ->
+              influxdb_worker_udp:write(Worker, Data)
+          end,
+    try ecpool:with_client(Pool, Key, Fun)
+    catch E:R:S ->
+        logger:error("[InfluxDB] http write fail: ~0p ~0p ~0p", [E, R, S]),
+        {fail, {E, R}}
+    end.

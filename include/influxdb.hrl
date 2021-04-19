@@ -14,17 +14,6 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
-%% defaults
--define(DEFAULT_WRITE_PROTOCOL, udp).
--define(DEFAULT_BATCH_SIZE, 32).
--define(DEFAULT_UDP_OPTS, [{host, "127.0.0,1"},
-                           {port, 8089}]).
--define(DEFAULT_HTTP_OPTS, [{host, "127.0.0.1"},
-                            {port, 8086},
-                            {database, "mydb"},
-                            {precision, ms},
-                            {https_enabled, false}]).
-
 %% types
 -type precision() :: ns | us | ms | s | m | h.
 -type udp_opts() :: [udp_opt()].

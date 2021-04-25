@@ -126,16 +126,14 @@ init([Opts]) ->
     end.
 
 handle_call(is_running, _From, State = #state{http_opts = HTTPOpts}) ->
-    URL = string:join([get_value(url, HTTPOpts), "ping"], "/"),
-    QueryParams = may_append_authentication_params([{"verbose", "true"}], HTTPOpts),    
-    HTTPOptions = case get_value(https_enabled, HTTPOpts) of
-                      false -> [];
-                      true -> [{ssl, get_value(ssl, HTTPOpts, [])}]
-                  end,
-    NewURL = append_query_params_to_url(URL, QueryParams),
-    case httpc:request(get, {NewURL, []}, HTTPOptions, []) of
-        {ok, {{_, 200, _}, _, _}} -> {reply, true, State};
-        _ -> {reply, false, State}
+    Path = make_ping_path(HTTPOpts),
+    case ehttpc:request(ehttpc_pool:pick_worker(?APP), get, {Path, []}) of
+        {ok, 200, _} ->
+            {reply, true, State};
+        {ok, 200, _, _} ->
+            {reply, true, State};
+        _ ->
+            {reply, false, State}
     end;
 
 handle_call({write, Points}, _From, State) ->
@@ -234,6 +232,23 @@ make_url(HTTPOpts) ->
             end,
     Scheme ++ Host ++ ":" ++ Port.
 
+make_ping_path(HTTPOpts) ->
+    Database = proplists:get_value(database, HTTPOpts),
+    Username = proplists:get_value(username, HTTPOpts),
+    Password = proplists:get_value(password, HTTPOpts),
+    List0 = [
+        {<<"db">>, Database}, 
+        {<<"u">>, Username}, 
+        {<<"p">>, Password}, 
+        {<<"verbose">>, <<"true">>}],
+    Filter = fun(Arg) -> 
+                case Arg of
+                    {_, undefined} -> false;
+                    {_, _} -> true
+                end
+            end,
+    List = lists:filter(Filter, List0),
+    "/ping?" ++ uri_string:compose_query(List).
 make_path(HTTPOpts) ->
     Database = proplists:get_value(database, HTTPOpts),
     Username = proplists:get_value(username, HTTPOpts),
@@ -280,20 +295,6 @@ getaddr(Host, AddressFamily)
         {error, Reason} ->
             {error, Reason}
     end.
-
-may_append_authentication_params(QueryParams0, AuthParams) ->
-    QueryParams = [{"u", get_value(username, AuthParams, undefined)},
-                   {"p", get_value(password, AuthParams, undefined)} | QueryParams0],
-    lists:dropwhile(fun({_, K}) -> K =:= undefined end, QueryParams).
-
-append_query_params_to_url(URL, QueryParams) ->
-    do_append_query_params_to_url(URL ++ "?", QueryParams).
-
-do_append_query_params_to_url(URL, [{K, V}]) ->
-    URL ++ http_uri:encode(K) ++ "=" ++ http_uri:encode(V);
-do_append_query_params_to_url(URL, [{K, V} | More]) ->
-    NewURL = URL ++ http_uri:encode(K) ++ "=" ++ http_uri:encode(V) ++ "&",
-    do_append_query_params_to_url(NewURL, More).
 
 drain_points(0, Acc) ->
     lists:append(lists:reverse(Acc));

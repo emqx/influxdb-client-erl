@@ -121,9 +121,8 @@ init([Opts]) ->
                              udp_socket = Socket}};
         http ->
             ehttpc_sup:start_pool(?APP, HTTPOpts),
-            {ok, State#state{http_opts = HTTPOpts ++ [{path, make_path(HTTPOpts)}]}}
+            {ok, State#state{http_opts = HTTPOpts ++ [{path, make_write_path(HTTPOpts)}]}}
     end.
-
 handle_call(is_running, _From, State = #state{http_opts = HTTPOpts}) ->
     Path = make_ping_path(HTTPOpts),
     case ehttpc:request(ehttpc_pool:pick_worker(?APP), get, {Path, []}) of
@@ -231,7 +230,13 @@ make_url(HTTPOpts) ->
             end,
     Scheme ++ Host ++ ":" ++ Port.
 
+make_write_path(HTTPOpts) ->
+    make_path("/write", [], HTTPOpts).
+
 make_ping_path(HTTPOpts) ->
+    make_path("/ping", [{<<"verbose">>, <<"true">>}], HTTPOpts).
+
+make_path(Path, StaticHeader, HTTPOpts) ->
     List0 = [{<<"db">>, database},
             {<<"u">>, username},
             {<<"p">>, password},
@@ -242,25 +247,12 @@ make_ping_path(HTTPOpts) ->
                         Val -> [{K1, Val}| Acc]
                     end
                 end,
-    List = lists:foldl(FoldlFun, [{<<"verbose">>, <<"true">>}], List0),
-    "/ping?" ++ uri_string:compose_query(List).
-make_path(HTTPOpts) ->
-    List0 = [{<<"db">>, database},
-            {<<"u">>, username},
-            {<<"p">>, password},
-            {<<"precision">>, precision}],
-    FoldlFun = fun({K1, K2}, Acc) ->
-                    case proplists:get_value(K2, HTTPOpts) of
-                        undefined -> Acc;
-                        Val -> [{K1, Val}| Acc]
-                    end
-                end,
-    List = lists:foldl(FoldlFun, [], List0),
+    List = lists:foldl(FoldlFun, StaticHeader, List0),
     case length(List) of
         0 -> 
-            "/write";
+            Path;
         _ -> 
-            "/write?" ++ uri_string:compose_query(List)
+        Path ++ "?" ++ uri_string:compose_query(List)
     end.
 
 merge_default_opts(Opts, Default) when is_list(Opts) ->

@@ -120,7 +120,7 @@ init([Opts]) ->
             {ok, State#state{udp_opts = lists:keyreplace(host, 1, UDPOpts, {host, IPAddress}),
                              udp_socket = Socket}};
         http ->
-	        application:ensure_all_started(ehttpc),
+            application:ensure_all_started(ehttpc),
             ehttpc_sup:start_pool(?APP, HTTPOpts),
             {ok, State#state{http_opts = HTTPOpts ++ [{path, make_path(HTTPOpts)}]}}
     end.

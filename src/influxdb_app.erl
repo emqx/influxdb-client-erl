@@ -14,12 +14,19 @@
 
 -module(influxdb_app).
 -behaviour(application).
+-include("influxdb.hrl").
 
 -export([start/2]).
+-export([prep_stop/1]).
 -export([stop/1]).
 
 start(_Type, _Args) ->
 	influxdb_sup:start_link().
 
+prep_stop(State) ->
+    ehttpc_sup:stop_pool(?APP),
+    State.
+
 stop(_State) ->
+    ehttpc_sup:stop_pool(?APP),
 	ok.

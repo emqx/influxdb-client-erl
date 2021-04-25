@@ -160,7 +160,7 @@ handle_info(_Info, State) ->
 	{noreply, State}.
 
 terminate(_Reason, _State) ->
-    ehttpc_sup:stop_pool(?APP).
+    ok.
 
 code_change(_OldVsn, State, _Extra) ->
 	{ok, State}.

@@ -15,7 +15,7 @@
 %%--------------------------------------------------------------------
 
 %% defaults
--define(APP, influxdb_client).
+-define(APP, influxdb).
 
 -define(DEFAULT_WRITE_PROTOCOL, udp).
 -define(DEFAULT_BATCH_SIZE, 32).

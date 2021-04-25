@@ -120,7 +120,6 @@ init([Opts]) ->
             {ok, State#state{udp_opts = lists:keyreplace(host, 1, UDPOpts, {host, IPAddress}),
                              udp_socket = Socket}};
         http ->
-            application:ensure_all_started(ehttpc),
             ehttpc_sup:start_pool(?APP, HTTPOpts),
             {ok, State#state{http_opts = HTTPOpts ++ [{path, make_path(HTTPOpts)}]}}
     end.
@@ -233,35 +232,30 @@ make_url(HTTPOpts) ->
     Scheme ++ Host ++ ":" ++ Port.
 
 make_ping_path(HTTPOpts) ->
-    Database = proplists:get_value(database, HTTPOpts),
-    Username = proplists:get_value(username, HTTPOpts),
-    Password = proplists:get_value(password, HTTPOpts),
-    List0 = [
-        {<<"db">>, Database}, 
-        {<<"u">>, Username}, 
-        {<<"p">>, Password}, 
-        {<<"verbose">>, <<"true">>}],
-    Filter = fun(Arg) -> 
-                case Arg of
-                    {_, undefined} -> false;
-                    {_, _} -> true
-                end
-            end,
-    List = lists:filter(Filter, List0),
+    List0 = [{<<"db">>, database},
+            {<<"u">>, username},
+            {<<"p">>, password},
+            {<<"precision">>, precision}],
+    FoldlFun = fun({K1, K2}, Acc) ->
+                    case proplists:get_value(K2, HTTPOpts) of
+                        undefined -> Acc;
+                        Val -> [{K1, Val}| Acc]
+                    end
+                end,
+    List = lists:foldl(FoldlFun, [{<<"verbose">>, <<"true">>}], List0),
     "/ping?" ++ uri_string:compose_query(List).
 make_path(HTTPOpts) ->
-    Database = proplists:get_value(database, HTTPOpts),
-    Username = proplists:get_value(username, HTTPOpts),
-    Password = proplists:get_value(password, HTTPOpts),
-    Precision = proplists:get_value(precision, HTTPOpts),
-    List0 = [{<<"db">>, Database}, {<<"u">>, Username}, {<<"p">>, Password}, {<<"precision">>, Precision}],
-    Filter = fun(Arg) -> 
-                case Arg of
-                    {_, undefined} -> false;
-                    {_, _} -> true
-                end
-            end,
-    List = lists:filter(Filter, List0),
+    List0 = [{<<"db">>, database},
+            {<<"u">>, username},
+            {<<"p">>, password},
+            {<<"precision">>, precision}],
+    FoldlFun = fun({K1, K2}, Acc) ->
+                    case proplists:get_value(K2, HTTPOpts) of
+                        undefined -> Acc;
+                        Val -> [{K1, Val}| Acc]
+                    end
+                end,
+    List = lists:foldl(FoldlFun, [], List0),
     case length(List) of
         0 -> 
             "/write";

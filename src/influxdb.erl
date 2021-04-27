@@ -92,9 +92,9 @@ write_sync(Pid, Points) ->
                     timestamp => integer()}).
 write(Pid, Points, Opts) ->
     case proplists:get_value(schedule, Opts, sync) of
-        sync -> 
+        sync ->
             gen_server:call(Pid, {write, Points});
-        aync ->         
+        aync ->
             gen_server:cast(Pid, {write, Points})
     end.
 
@@ -126,7 +126,7 @@ init([Opts]) ->
 
 handle_call(is_running, _From, State = #state{http_opts = HTTPOpts}) ->
     URL = string:join([get_value(url, HTTPOpts), "ping"], "/"),
-    QueryParams = may_append_authentication_params([{"verbose", "true"}], HTTPOpts),    
+    QueryParams = may_append_authentication_params([{"verbose", "true"}], HTTPOpts),
     HTTPOptions = case get_value(https_enabled, HTTPOpts) of
                       false -> [];
                       true -> [{ssl, get_value(ssl, HTTPOpts, [])}]
@@ -139,9 +139,9 @@ handle_call(is_running, _From, State = #state{http_opts = HTTPOpts}) ->
 
 handle_call({write, Points}, _From, State) ->
     case do_write(Points, State) of
-        {ok, NewState} -> 
+        {ok, NewState} ->
             {reply, ok, NewState};
-        {fail, Reason, NewState} -> 
+        {fail, Reason, NewState} ->
             {reply, {error, Reason}, NewState}
     end;
 
@@ -150,9 +150,9 @@ handle_call(_Request, _From, State) ->
 
 handle_cast({write, Points}, State) ->
     case do_write(Points, State) of
-        {ok, NewState} -> 
+        {ok, NewState} ->
             {noreply, NewState};
-        {fail, _Reason, NewSate} -> 
+        {fail, _Reason, NewSate} ->
             {noreply, NewSate}
     end,
     {noreply, State};
@@ -196,7 +196,8 @@ do_write(Points, State = #state{write_protocol = WriteProtocol,
                 http ->
                     URL = string:join([get_value(url, HTTPOpts), "write"], "/"),
                     QueryParams = may_append_authentication_params([{"db", get_value(database, HTTPOpts)},
-                                                                    {"precision", get_value(precision, HTTPOpts)}], HTTPOpts),                                              
+                                                                    {"precision", get_value(precision, HTTPOpts)}], HTTPOpts),
+
                     HTTPOptions = case get_value(https_enabled, HTTPOpts) of
                                     false -> [{ssl, get_value(ssl, HTTPOpts)}];
                                     true -> []

@@ -96,5 +96,5 @@ getaddr(Host, AddressFamily)
 %%%===================================================================
 %%% ecpool callback
 %%%===================================================================
-connect(Option) ->
-    start_link(Option).
+connect(Options) ->
+    start_link(Options).

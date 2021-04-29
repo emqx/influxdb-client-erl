@@ -1,4 +1,5 @@
-%% Copyright (c) 2013-2019 EMQ Technologies Co., Ltd. All Rights Reserved.
+%%--------------------------------------------------------------------
+%% Copyright (c) 2020-2021 EMQ Technologies Co., Ltd. All Rights Reserved.
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -11,15 +12,20 @@
 %% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
-
+%%--------------------------------------------------------------------
 -module(influxdb_app).
+
 -behaviour(application).
 
 -export([start/2]).
+-export([prep_stop/1]).
 -export([stop/1]).
 
 start(_Type, _Args) ->
-	influxdb_sup:start_link().
+    influxdb_sup:start_link().
+
+prep_stop(State) ->
+    State.
 
 stop(_State) ->
-	ok.
+    ok.

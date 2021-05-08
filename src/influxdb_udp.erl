@@ -25,7 +25,7 @@ write(#{pool := Pool}, Data) ->
     try ecpool:with_client(Pool, Fun)
     catch E:R:S ->
         logger:error("[InfluxDB] http write fail: ~0p ~0p ~0p", [E, R, S]),
-        {fail, {E, R}}
+        {error, {E, R}}
     end.
 
 write(#{pool := Pool}, Key, Data) ->
@@ -35,5 +35,5 @@ write(#{pool := Pool}, Key, Data) ->
     try ecpool:with_client(Pool, Key, Fun)
     catch E:R:S ->
         logger:error("[InfluxDB] http write fail: ~0p ~0p ~0p", [E, R, S]),
-        {fail, {E, R}}
+        {error, {E, R}}
     end.

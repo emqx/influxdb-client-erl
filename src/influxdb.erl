@@ -22,7 +22,7 @@
         , write/3
         , stop_client/1]).
 
--spec(start_client(list()) -> {ok, Client :: map()} | {fail, Reason :: term()}).
+-spec(start_client(list()) -> {ok, Client :: map()} | {error, {already_started, Client :: map()}} | {error, Reason :: term()}).
 start_client(Options0) ->
     Pool = proplists:get_value(pool, Options0),
     Protocol = proplists:get_value(protocol, Options0, http),
@@ -37,15 +37,24 @@ start_client(Options0) ->
                 {ok, _} ->
                     Path = make_path(Options),
                     {ok, maps:put(path, Path, Client)};
-                Error -> 
-                    {fail, Error}
+                {error, {already_started, _}} ->
+                    Path = make_path(Options),
+                    {error, {already_started, maps:put(path, Path, Client)}};
+                {error, Reason} ->
+                    {error, Reason};
+                Error ->
+                    {error, Error}
             end;
         udp ->
             case ecpool:start_sup_pool(Pool, influxdb_worker_udp, Options) of
                 {ok, _} ->
                     {ok, Client};
+                {error, {already_started, _}} ->
+                    {error, {already_started, Client}};
+                {error, Reason} ->
+                    {error, Reason};
                 Error -> 
-                    {fail, Error}
+                    {error, Error}
             end
     end.
 
@@ -58,7 +67,7 @@ is_alive(#{protocol := Protocol} = Client) ->
             true
     end.
 
--spec(write(Client, Points) -> ok | {fail, term()}
+-spec(write(Client, Points) -> ok | {error, term()}
 when Client :: map(),
      Points :: [Point],
      Point :: #{measurement => atom() | binary() | list(),
@@ -69,7 +78,7 @@ write(#{protocol := Protocol} = Client, Points) ->
     case influxdb_line:encode(Points) of
         {error, Reason} ->
             logger:error("[InfluxDB] Encode ~0p failed: ~0p", [Points, Reason]),
-            {fail, Reason};
+            {error, Reason};
         Data ->
             case Protocol of
                 http -> 
@@ -79,7 +88,7 @@ write(#{protocol := Protocol} = Client, Points) ->
              end
     end.
 
--spec(write(Client, Key, Points) -> ok | {fail, term()}
+-spec(write(Client, Key, Points) -> ok | {error, term()}
 when Client :: map(),
      Key :: any(),
      Points :: [Point],
@@ -91,7 +100,7 @@ write(#{protocol := Protocol} = Client, Key, Points) ->
     case influxdb_line:encode(Points) of
         {error, Reason} ->
             logger:error("[InfluxDB] Encode ~0p failed: ~0p", [Points, Reason]),
-            {fail, Reason};
+            {error, Reason};
         Data ->
             case Protocol of
                 http -> 

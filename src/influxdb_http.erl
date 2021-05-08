@@ -50,12 +50,12 @@ do_write(Worker, Path, Data) ->
         {ok, 204, _, _} ->
             ok;
         {ok, StatusCode, Reason} ->
-            {fail, {StatusCode, Reason}};
+            {error, {StatusCode, Reason}};
         {ok, StatusCode, Reason, Body} ->
-            {fail, {StatusCode, Reason, Body}};
+            {error, {StatusCode, Reason, Body}};
         Error ->
-            {fail, Error}
+            {error, Error}
     catch E:R:S ->
         logger:error("[InfluxDB] http write fail: ~0p ~0p ~0p", [E, R, S]),
-        {fail, {E, R}}
+        {error, {E, R}}
     end.

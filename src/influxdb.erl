@@ -35,15 +35,13 @@ start_client(Options0) ->
         http ->
             case ehttpc_sup:start_pool(Pool, Options) of
                 {ok, _} ->
-                    Path = make_path(Options),
-                    {ok, maps:put(path, Path, Client)};
+                    ClientOptions = http_clients_options(Options),
+                    {ok, maps:merge(ClientOptions, Client)};
                 {error, {already_started, _}} ->
-                    Path = make_path(Options),
-                    {error, {already_started, maps:put(path, Path, Client)}};
+                    ClientOptions = http_clients_options(Options),
+                    {error, {already_started, maps:merge(ClientOptions, Client)}};
                 {error, Reason} ->
-                    {error, Reason};
-                Error ->
-                    {error, Error}
+                    {error, Reason}
             end;
         udp ->
             case ecpool:start_sup_pool(Pool, influxdb_worker_udp, Options) of
@@ -52,9 +50,7 @@ start_client(Options0) ->
                 {error, {already_started, _}} ->
                     {error, {already_started, Client}};
                 {error, Reason} ->
-                    {error, Reason};
-                Error -> 
-                    {error, Error}
+                    {error, Reason}
             end
     end.
 
@@ -96,8 +92,8 @@ when Client :: map(),
                 tags => map(),
                 fields => map(),
                 timestamp => integer()}).
-write(#{protocol := Protocol} = Client, Key, Points) ->
-    case influxdb_line:encode(Points) of
+write(#{protocol := Protocol, version := Version} = Client, Key, Points) ->
+    case influxdb_line:encode(Version, Points) of
         {error, Reason} ->
             logger:error("[InfluxDB] Encode ~0p failed: ~0p", [Points, Reason]),
             {error, Reason};
@@ -120,23 +116,53 @@ stop_client(#{pool := Pool, protocol := Protocol}) ->
     end.
 
 %%%-------------------------------------------------------------------
-%%% internale function
+%%% internal function
 %%%-------------------------------------------------------------------
-make_path(InfluxdbConf) ->
-    List0 = [{"db", database},
-            {"u", username},
-            {"p", password},
-            {"precision", precision}],
-    FoldlFun = fun({K1, K2}, Acc) ->
-                    case proplists:get_value(K2, InfluxdbConf) of
-                        undefined -> Acc;
-                        Val -> [{K1, Val}| Acc]
-                    end
-                end,
+
+http_clients_options(Options) ->
+    Version = proplists:get_value(version, Options, v1),
+    Path = path(Version, Options),
+    Headers = header(Version, Options),
+    PoolType = proplists:get_value(pool_type, Options, random),
+    #{path => Path, headers => Headers, version => Version, pool_type => PoolType}.
+
+path(Version, Options) ->
+    List0 = qs_list(Version),
+    FoldlFun =
+        fun({K1, K2}, Acc) ->
+            case proplists:get_value(K2, Options) of
+                undefined -> Acc;
+                Val -> [{K1, Val} | Acc]
+            end
+        end,
     List = lists:foldl(FoldlFun, [], List0),
+    Path = path(Version),
     case length(List) of
         0 -> 
-        "/write";
+            Path;
         _ -> 
-        "/write?" ++ uri_string:compose_query(List)
+            Path ++ "?" ++ uri_string:compose_query(List)
     end.
+
+qs_list(v1) ->
+    [
+        {"db", database},
+        {"u", username},
+        {"p", password},
+        {"precision", precision}
+    ];
+qs_list(v2) ->
+    [ 
+        {"org", org},
+        {"bucket", bucket},
+        {"precision", precision}
+    ].
+
+path(v1) -> "/write";
+path(v2) -> "/api/v2/write".
+
+header(v1, _) ->
+    [{<<"Content-type">>, <<"text/plain; charset=utf-8">>}];
+header(v2, Options) ->
+    Token = proplists:get_value(token, Options, <<"">>),
+    [{<<"Authorization">>, <<"Token ", Token/binary>>}] ++ header(v1, Options).

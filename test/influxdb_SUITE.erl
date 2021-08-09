@@ -37,12 +37,16 @@ t_encode_line(_) ->
     ok.
 
 t_write(_) ->
-    t_write_(http, random),
-    t_write_(http, hash),
-    t_write_(udp, random),
-    t_write_(udp, hash).
+    t_write_(http, random, v1),
+    t_write_(http, random, v2),
+    t_write_(http, hash, v1),
+    t_write_(http, hash, v2),
+    t_write_(udp, random, v1),
+    t_write_(udp, random, v2),
+    t_write_(udp, hash, v1),
+    t_write_(udp, hash, v2).
 
-t_write_(WriteProtocol, PoolType) ->
+t_write_(WriteProtocol, PoolType, Version) ->
     Host = {127, 0, 0, 1},
     Port = case WriteProtocol of
                http -> 8086;
@@ -65,7 +69,9 @@ t_write_(WriteProtocol, PoolType) ->
              , {username, UserName}
              , {password, PassWord}
              , {database, DataBase}
-             , {precision, Precision}],
+             , {precision, Precision}
+             , {version, Version}
+            ],
     application:ensure_all_started(influxdb),
     {ok, Client} = influxdb:start_client(Option),
     timer:sleep(500),
@@ -89,7 +95,7 @@ t_write_(WriteProtocol, PoolType) ->
                     influxdb:write(Client, any_hash_key, Points2);
                 _ ->
                     influxdb:write(Client, Points2)
-            end,
+            end
         end,
     lists:seq(1, 5)),
     ok = influxdb:stop_client(Client).

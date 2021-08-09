@@ -22,12 +22,22 @@
 -define(equal_sign, <<"=">>).
 -define(space, <<" ">>).
 
--export([encode/1]).
+-export([generate_point/1]).
 
-encode(Point) when is_map(Point) ->
+-export([ encode/1
+        , encode/2
+        ]).
+
+encode(Point) ->
+    encode(v1, Point).
+
+encode(v2, Point) ->
+    influxdb_line_v2:encode(Point);
+
+encode(v1, Point) when is_map(Point) ->
     encode([Point]);
-encode(Points) when is_list(Points) ->
-    try encode_([atom_key_map(Point) || Point <- Points]) of
+encode(v1, Points) when is_list(Points) ->
+    try encode_([generate_point(Point) || Point <- Points]) of
         Encoded -> Encoded
     catch
         error : Reason ->
@@ -125,9 +135,15 @@ to_binary2(Data) when is_float(Data) ->
 to_binary2(Data) ->
     to_binary(Data).
 
-atom_key_map(BinKeyMap) when is_map(BinKeyMap) ->
-    maps:fold(fun(K, V, Acc) when is_binary(K) ->
-                  Acc#{binary_to_atom(K, utf8) => V};
-                 (K, V, Acc) ->
-                  Acc#{K => V}
-              end, #{}, BinKeyMap).
+generate_point(Point) when is_map(Point) ->
+    Fun =
+        fun(Key, Value, CurrentPoint) ->
+            CurrentPoint#{point_key(Key) => Value}
+        end,
+    maps:fold(Fun, #{}, Point).
+
+point_key(Key) when is_atom(Key) -> Key;
+point_key(<<"measurement">>) -> measurement;
+point_key(<<"tags">>) -> tags;
+point_key(<<"fields">>) -> fields;
+point_key(<<"timestamp">>) -> timestamp.

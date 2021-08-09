@@ -34,3 +34,11 @@
                    | {certfile, file:filename()}
                    | {cacertfile, file:filename()}
                    | {ciphers, string()}.
+
+-type(kv() :: {Key :: atom() | string() | binary(), Value :: atom() | string() | integer() | binary()}).
+
+-type(tag()     :: kv()).
+-type(field()   :: kv()).
+
+-type(tags()    :: [tag()]).
+-type(fields()  :: [field()]).

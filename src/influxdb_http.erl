@@ -19,11 +19,31 @@
         , write/2
         , write/3]).
 
-is_alive(#{pool := Pool}) ->
+is_alive(Client = #{version := Version}) ->
+    is_alive(Version, Client);
+is_alive(Client) ->
+    is_alive(v1, Client).
+
+is_alive(v2, Client = #{headers := Headers}) ->
+    Path = "/api/v2/health",
+    try
+        Worker = pick_worker(Client, ignore),
+        case ehttpc:request(Worker, get, {Path, Headers}) of
+            {ok, 200, _} ->
+                true;
+            {ok, 200, _, _} ->
+                true;
+            _ ->
+                false
+        end
+    catch _E:_R:_S ->
+        false
+    end;
+is_alive(v1, Client) ->
     Path = "/ping",
     Headers = [{<<"verbose">>, <<"true">>}],
     try
-        Worker = ehttpc_pool:pick_worker(Pool),
+        Worker = pick_worker(Client, ignore),
         case ehttpc:request(Worker, get, {Path, Headers}) of
             {ok, 204, _} ->
                 true;
@@ -32,18 +52,18 @@ is_alive(#{pool := Pool}) ->
             _ ->
                 false
         end
-    catch _E:_R:_S ->
+    catch E:R:S ->
+        logger:error("[InfluxDB] is alive: ~0p ~0p ~0p", [E, R, S]),
         false
     end.
 
-write(#{pool := Pool, path := Path}, Data) ->
-    do_write(ehttpc_pool:pick_worker(Pool), Path, Data).
+write(Client = #{path := Path, headers := Headers}, Data) ->
+    do_write(pick_worker(Client, ignore), Path, Headers, Data).
 
-write(#{pool := Pool, path := Path}, Key, Data) ->
-    do_write(ehttpc_pool:pick_worker(Pool, Key), Path, Data).
+write(Client = #{path := Path, headers := Headers}, Key, Data) ->
+    do_write(pick_worker(Client, Key), Path, Headers, Data).
 
-do_write(Worker, Path, Data) ->
-    Headers = [{<<"content-type">>, <<"text/plain">>}],
+do_write(Worker, Path, Headers, Data) ->
     try ehttpc:request(Worker, post, {Path, Headers, Data}) of
         {ok, 204, _} ->
             ok;
@@ -59,3 +79,8 @@ do_write(Worker, Path, Data) ->
         logger:error("[InfluxDB] http write fail: ~0p ~0p ~0p", [E, R, S]),
         {error, {E, R}}
     end.
+
+pick_worker(#{pool := Pool, pool_type := hash}, Key) ->
+    ehttpc_pool:pick_worker(Pool, Key);
+pick_worker(#{pool := Pool}, _Key) ->
+    ehttpc_pool:pick_worker(Pool).

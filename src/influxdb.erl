@@ -113,7 +113,7 @@ write(#{protocol := Protocol} = Client, Key, Points) ->
 -spec(stop_client(Client :: map()) -> ok | term()).
 stop_client(#{pool := Pool, protocol := Protocol}) ->
     case Protocol of
-        http -> 
+        http ->
             ehttpc_sup:stop_pool(Pool);
         udp ->
             ecpool:stop_sup_pool(Pool)
@@ -123,6 +123,13 @@ stop_client(#{pool := Pool, protocol := Protocol}) ->
 %%% internale function
 %%%-------------------------------------------------------------------
 make_path(InfluxdbConf) ->
+    Host = proplists:get_value(host, InfluxdbConf),
+    Port = proplists:get_value(port, InfluxdbConf),
+
+    Url = case proplists:get_value(https_enabled, InfluxdbConf) of
+        true ->  lists:concat(["https://", Host, ":", Port]);
+        false -> lists:concat(["http://", Host, ":", Port])
+    end,
     List0 = [{"db", database},
             {"u", username},
             {"p", password},
@@ -135,8 +142,8 @@ make_path(InfluxdbConf) ->
                 end,
     List = lists:foldl(FoldlFun, [], List0),
     case length(List) of
-        0 -> 
-        "/write";
-        _ -> 
-        "/write?" ++ uri_string:compose_query(List)
+        0 ->
+        Url ++ "/write";
+        _ ->
+        Url ++ "/write?" ++ uri_string:compose_query(List)
     end.

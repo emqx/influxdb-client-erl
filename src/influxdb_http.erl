@@ -25,13 +25,17 @@ is_alive(Client) ->
     is_alive(v1, Client).
 
 is_alive(v2, Client = #{headers := Headers}) ->
-    Path = "/api/v2/health",
+    Path = "/ping",
     try
         Worker = pick_worker(Client, ignore),
         case ehttpc:request(Worker, get, {Path, Headers}) of
             {ok, 200, _} ->
                 true;
             {ok, 200, _, _} ->
+                true;
+            {ok, 204, _} ->
+                true;
+            {ok, 204, _, _} ->
                 true;
             _ ->
                 false

@@ -71,17 +71,17 @@ when Client :: map(),
                 fields => map(),
                 timestamp => integer()}).
 write(#{protocol := Protocol} = Client, Points) ->
-    case influxdb_line:encode(Points) of
-        {error, Reason} ->
-            logger:error("[InfluxDB] Encode ~0p failed: ~0p", [Points, Reason]),
-            {error, Reason};
-        Data ->
-            case Protocol of
-                http -> 
-                    influxdb_http:write(Client, Data);
-                udp ->
-                    influxdb_udp:write(Client, Data)
-             end
+    try
+        Version = maps:get(version, Client, v1),
+        case Protocol of
+            http ->
+                influxdb_http:write(Client, influxdb_line:encode(Version, Points));
+            udp ->
+                influxdb_udp:write(Client, influxdb_line:encode(Version, Points))
+         end
+    catch E:R:S ->
+        logger:error("[InfluxDB] Encode ~0p failed: ~0p ~0p ~p", [Points, E, R, S]),
+        {error, R}
     end.
 
 -spec(write(Client, Key, Points) -> ok | {error, term()}
@@ -92,18 +92,19 @@ when Client :: map(),
                 tags => map(),
                 fields => map(),
                 timestamp => integer()}).
-write(#{protocol := Protocol, version := Version} = Client, Key, Points) ->
-    case influxdb_line:encode(Version, Points) of
-        {error, Reason} ->
-            logger:error("[InfluxDB] Encode ~0p failed: ~0p", [Points, Reason]),
-            {error, Reason};
-        Data ->
-            case Protocol of
-                http -> 
-                    influxdb_http:write(Client, Key, Data);
-                udp ->
-                    influxdb_udp:write(Client, Key, Data)
-             end
+write(#{protocol := Protocol} = Client, Key, Points) ->
+    Version = maps:get(version, Client, v1),
+    try
+        Version = maps:get(version, Client, v1),
+        case Protocol of
+            http ->
+                influxdb_http:write(Client, Key, influxdb_line:encode(Version, Points));
+            udp ->
+                influxdb_udp:write(Client, Key, influxdb_line:encode(Version, Points))
+         end
+    catch E:R:S ->
+        logger:error("[InfluxDB] Encode ~0p failed: ~0p ~0p ~p", [Points, E, R, S]),
+        {error, R}
     end.
 
 -spec(stop_client(Client :: map()) -> ok | term()).

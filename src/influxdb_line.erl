@@ -37,12 +37,7 @@ encode(v2, Point) ->
 encode(v1, Point) when is_map(Point) ->
     encode([Point]);
 encode(v1, Points) when is_list(Points) ->
-    try encode_([generate_point(Point) || Point <- Points]) of
-        Encoded -> Encoded
-    catch
-        error : Reason ->
-            {error, Reason}
-    end.
+    encode_([generate_point(Point) || Point <- Points]).
 
 encode_(Points) when is_list(Points), length(Points) > 0 ->
     lists:foldr(fun(Point, Acc) when is_map(Point) ->
@@ -77,9 +72,11 @@ encode_fields([{Key, Value} | Rest]) ->
 encode_field(Key, Value) ->
     [escape_special_chars(field_key, to_binary(Key)), "=", encode_field_value(Value)].
 
-encode_field_value(Value) when is_integer(Value) ->
+encode_field_value({int, Value}) when is_integer(Value) ->
     Int = erlang:integer_to_binary(Value),
     <<Int/binary, "i">>;
+encode_field_value(Value) when is_integer(Value) ->
+    erlang:integer_to_binary(Value);
 encode_field_value(Value) when is_float(Value) ->
     erlang:float_to_binary(Value, [compact, {decimals, 12}]);
 encode_field_value(Value) when is_atom(Value) ->

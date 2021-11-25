@@ -69,6 +69,9 @@ encode_field(Key, Value) ->
 encode_field_value({int, Value}) when is_integer(Value) ->
     Int = erlang:integer_to_binary(Value),
     <<Int/binary, "i">>;
+encode_field_value({uint, Value}) when is_integer(Value) ->
+    Int = erlang:integer_to_binary(Value),
+    <<Int/binary, "u">>;
 encode_field_value(Value) when is_integer(Value) ->
     erlang:integer_to_binary(Value);
 encode_field_value(Value) when is_float(Value) ->

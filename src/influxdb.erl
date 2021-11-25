@@ -72,12 +72,11 @@ when Client :: map(),
                 timestamp => integer()}).
 write(#{protocol := Protocol} = Client, Points) ->
     try
-        Version = maps:get(version, Client, v1),
         case Protocol of
             http ->
-                influxdb_http:write(Client, influxdb_line:encode(Version, Points));
+                influxdb_http:write(Client, influxdb_line:encode(Points));
             udp ->
-                influxdb_udp:write(Client, influxdb_line:encode(Version, Points))
+                influxdb_udp:write(Client, influxdb_line:encode(Points))
          end
     catch E:R:S ->
         logger:error("[InfluxDB] Encode ~0p failed: ~0p ~0p ~p", [Points, E, R, S]),
@@ -95,12 +94,11 @@ when Client :: map(),
 write(#{protocol := Protocol} = Client, Key, Points) ->
     Version = maps:get(version, Client, v1),
     try
-        Version = maps:get(version, Client, v1),
         case Protocol of
             http ->
-                influxdb_http:write(Client, Key, influxdb_line:encode(Version, Points));
+                influxdb_http:write(Client, Key, influxdb_line:encode(Points));
             udp ->
-                influxdb_udp:write(Client, Key, influxdb_line:encode(Version, Points))
+                influxdb_udp:write(Client, Key, influxdb_line:encode(Points))
          end
     catch E:R:S ->
         logger:error("[InfluxDB] Encode ~0p failed: ~0p ~0p ~p", [Points, E, R, S]),

@@ -16,6 +16,8 @@
 
 -module(influxdb_line).
 
+-include("influxdb.hrl").
+
 -define(backslash, <<"\\">>).
 -define(comma, <<",">>).
 -define(double_quote, <<"\"">>).
@@ -24,19 +26,11 @@
 
 -export([generate_point/1]).
 
--export([ encode/1
-        , encode/2
-        ]).
+-export([encode/1]).
 
-encode(Point) ->
-    encode(v1, Point).
-
-encode(v2, Point) ->
-    influxdb_line_v2:encode(Point);
-
-encode(v1, Point) when is_map(Point) ->
+encode(Point) when is_map(Point) ->
     encode([Point]);
-encode(v1, Points) when is_list(Points) ->
+encode(Points) when is_list(Points) ->
     encode_([generate_point(Point) || Point <- Points]).
 
 encode_(Points) when is_list(Points), length(Points) > 0 ->
@@ -80,11 +74,11 @@ encode_field_value(Value) when is_integer(Value) ->
 encode_field_value(Value) when is_float(Value) ->
     erlang:float_to_binary(Value, [compact, {decimals, 12}]);
 encode_field_value(Value) when is_atom(Value) ->
-    if
-        Value =:= t; Value =:= 'T'; Value =:= true; Value =:= 'True'; Value =:= 'TRUE' -> <<"t">>;
-        Value =:= f; Value =:= 'F'; Value =:= false; Value =:= 'False'; Value =:= 'FALSE' -> <<"f">>;
-        true ->
-            encode_field_value(to_binary(Value))
+    case maps:get(Value, ?VALUES_BOOLEAN, undefined) of
+        undefined ->
+            encode_field_value(atom_to_binary(Value, utf8));
+        BooleanValue ->
+            BooleanValue
     end;
 encode_field_value(Value) ->
     Bin = escape_special_chars(field_value, to_binary(Value)),

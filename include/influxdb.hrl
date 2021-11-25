@@ -42,3 +42,18 @@
 
 -type(tags()    :: [tag()]).
 -type(fields()  :: [field()]).
+
+-define(VALUES_BOOLEAN, 
+    #{
+        't' => <<"t">>,
+        'T' => <<"T">>,
+        'true' => <<"true">>,
+        'TRUE' => <<"TRUE">>,
+        'True' => <<"True">>,
+        'f' => <<"f">>,
+        'F' => <<"F">>,
+        'false' => <<"false">>,
+        'FALSE' => <<"FALSE">>,
+        'False' => <<"False">>
+    }
+).

@@ -1,6 +1,6 @@
 {application,influxdb,
              [{description,"InfluxDB Client"},
-              {vsn, git},
+              {vsn, "git"},
               {modules,[]},
               {registered,[influxdb_sup]},
               {applications,[kernel,stdlib,ehttpc,ecpool]},

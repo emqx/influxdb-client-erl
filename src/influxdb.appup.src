@@ -1,7 +1,8 @@
 %% -*-: erlang -*-
-{"1.1.2",
+{VSN,
  [
   {"1.1.1", [
+    {delete_module, influxdb_line_v2, brutal_purge, soft_purge, []},
     {load_module, influxdb_line, brutal_purge, soft_purge, []},
     {load_module, influxdb_http, brutal_purge, soft_purge, []},
     {load_module, influxdb, brutal_purge, soft_purge, []}
@@ -22,6 +23,7 @@
  ],
  [
   {"1.1.1", [
+    {delete_module, influxdb_line_v2, brutal_purge, soft_purge, []},
     {load_module, influxdb_line, brutal_purge, soft_purge, []},
     {load_module, influxdb_http, brutal_purge, soft_purge, []},
     {load_module, influxdb, brutal_purge, soft_purge, []}
@@ -33,6 +35,7 @@
     {load_module, influxdb, brutal_purge, soft_purge, []}
   ]},
   {"1.0.2", [
+    {delete_module, influxdb_line_v2, brutal_purge, soft_purge, []},
     {load_module, influxdb_line, brutal_purge, soft_purge, []},
     {load_module, influxdb_http, brutal_purge, soft_purge, []},
     {load_module, influxdb, brutal_purge, soft_purge, []}

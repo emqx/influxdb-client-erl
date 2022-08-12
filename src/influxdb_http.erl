@@ -71,13 +71,13 @@ write(Client = #{path := Path, headers := Headers}, Key, Data) ->
     Request = {Path, Headers, Data},
     do_write(pick_worker(Client, Key), Request).
 
-write_async(Client = #{path := Path, headers := Headers}, Data, ReplayFun) ->
+write_async(Client = #{path := Path, headers := Headers}, Data, ReplayFunAndArgs) ->
     Request = {Path, Headers, Data},
-    do_aysnc_write(pick_worker(Client, ignore), Request, ReplayFun).
+    do_aysnc_write(pick_worker(Client, ignore), Request, ReplayFunAndArgs).
 
-write_async(Client = #{path := Path, headers := Headers}, Key, Data, ReplayFun) ->
+write_async(Client = #{path := Path, headers := Headers}, Key, Data, ReplayFunAndArgs) ->
     Request = {Path, Headers, Data},
-    do_aysnc_write(pick_worker(Client, Key), Request, ReplayFun).
+    do_aysnc_write(pick_worker(Client, Key), Request, ReplayFunAndArgs).
 
 %%==============================================================================
 %% Internal funcs
@@ -98,8 +98,8 @@ do_write(Worker, {_Path, _Headers, _Data} = Request) ->
         {error, {E, R}}
     end.
 
-do_aysnc_write(Worker, Request, ReplayFun) ->
-    ok = ehttpc:request_async(Worker, post, Request, ReplayFun).
+do_aysnc_write(Worker, Request, ReplayFunAndArgs) ->
+    ok = ehttpc:request_async(Worker, post, Request, 5000, ReplayFunAndArgs).
 
 pick_worker(#{pool := Pool, pool_type := hash}, Key) ->
     ehttpc_pool:pick_worker(Pool, Key);

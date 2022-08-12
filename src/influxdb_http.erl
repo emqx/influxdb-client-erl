@@ -17,7 +17,9 @@
 
 -export([ is_alive/1
         , write/2
-        , write/3]).
+        , write/3
+        , write_async/3
+        , write_async/4]).
 
 is_alive(Client = #{version := Version}) ->
     is_alive(Version, Client);
@@ -62,13 +64,25 @@ is_alive(v1, Client) ->
     end.
 
 write(Client = #{path := Path, headers := Headers}, Data) ->
-    do_write(pick_worker(Client, ignore), Path, Headers, Data).
+    Request = {Path, Headers, Data},
+    do_write(pick_worker(Client, ignore), Request).
 
 write(Client = #{path := Path, headers := Headers}, Key, Data) ->
-    do_write(pick_worker(Client, Key), Path, Headers, Data).
+    Request = {Path, Headers, Data},
+    do_write(pick_worker(Client, Key), Request).
 
-do_write(Worker, Path, Headers, Data) ->
-    try ehttpc:request(Worker, post, {Path, Headers, Data}) of
+write_async(Client = #{path := Path, headers := Headers}, Data, ReplayFun) ->
+    Request = {Path, Headers, Data},
+    do_aysnc_write(pick_worker(Client, ignore), Request, ReplayFun).
+
+write_async(Client = #{path := Path, headers := Headers}, Key, Data, ReplayFun) ->
+    Request = {Path, Headers, Data},
+    do_aysnc_write(pick_worker(Client, Key), Request, ReplayFun).
+
+%%==============================================================================
+%% Internal funcs
+do_write(Worker, {_Path, _Headers, _Data} = Request) ->
+    try ehttpc:request(Worker, post, Request) of
         {ok, 204, _} ->
             ok;
         {ok, 204, _, _} ->
@@ -83,6 +97,9 @@ do_write(Worker, Path, Headers, Data) ->
         logger:error("[InfluxDB] http write fail: ~0p ~0p ~0p", [E, R, S]),
         {error, {E, R}}
     end.
+
+do_aysnc_write(Worker, Request, ReplayFun) ->
+    ok = ehttpc:request_async(Worker, post, Request, ReplayFun).
 
 pick_worker(#{pool := Pool, pool_type := hash}, Key) ->
     ehttpc_pool:pick_worker(Pool, Key);

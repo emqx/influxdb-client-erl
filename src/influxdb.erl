@@ -20,6 +20,8 @@
         , is_alive/1
         , write/2
         , write/3
+        , write_async/3
+        , write_async/4
         , stop_client/1]).
 
 -spec(start_client(list()) -> {ok, Client :: map()} | {error, {already_started, Client :: map()}} | {error, Reason :: term()}).
@@ -99,6 +101,52 @@ write(#{protocol := Protocol} = Client, Key, Points) ->
                 influxdb_http:write(Client, Key, influxdb_line:encode(Points));
             udp ->
                 influxdb_udp:write(Client, Key, influxdb_line:encode(Points))
+         end
+    catch E:R:S ->
+        logger:error("[InfluxDB] Encode ~0p failed: ~0p ~0p ~p", [Points, E, R, S]),
+        {error, R}
+    end.
+
+-spec(write_async(Client, Points, {ReplayFun, Args}) -> ok | {error, term()}
+when Client :: map(),
+     Points :: [Point],
+     Point :: #{measurement => atom() | binary() | list(),
+                tags => map(),
+                fields => map(),
+                timestamp => integer()},
+     ReplayFun :: function(),
+     Args :: list()).
+write_async(#{protocol := Protocol} = Client, Points, {ReplayFun, Args}) ->
+    try
+        case Protocol of
+            http ->
+                influxdb_http:write_async(Client, influxdb_line:encode(Points), {ReplayFun, Args});
+            udp ->
+                {error, udp_async_mode_not_supported}
+         end
+    catch E:R:S ->
+        logger:error("[InfluxDB] Encode ~0p failed: ~0p ~0p ~p", [Points, E, R, S]),
+        {error, R}
+    end.
+
+-spec(write_async(Client, Key, Points, {ReplayFun, Args}) -> ok | {error, term()}
+when Client :: map(),
+     Key :: any(),
+     Points :: [Point],
+     Point :: #{measurement => atom() | binary() | list(),
+                tags => map(),
+                fields => map(),
+                timestamp => integer()},
+     ReplayFun :: function(),
+     Args :: list()).
+write_async(#{protocol := Protocol} = Client, Key, Points, {ReplayFun, Args}) ->
+    Version = maps:get(version, Client, v1),
+    try
+        case Protocol of
+            http ->
+                influxdb_http:write_async(Client, Key, influxdb_line:encode(Points), {ReplayFun, Args});
+            udp ->
+                {error, udp_async_mode_not_supported}
          end
     catch E:R:S ->
         logger:error("[InfluxDB] Encode ~0p failed: ~0p ~0p ~p", [Points, E, R, S]),

@@ -18,6 +18,9 @@ eunit: compile
 xref:
 	$(REBAR) xref
 
+dialyzer:
+	$(REBAR) dialyzer
+
 clean: distclean
 
 distclean:

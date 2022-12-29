@@ -94,7 +94,6 @@ when Client :: map(),
                 fields => map(),
                 timestamp => integer()}).
 write(#{protocol := Protocol} = Client, Key, Points) ->
-    Version = maps:get(version, Client, v1),
     try
         case Protocol of
             http ->
@@ -140,7 +139,6 @@ when Client :: map(),
      ReplayFun :: function(),
      Args :: list()).
 write_async(#{protocol := Protocol} = Client, Key, Points, {ReplayFun, Args}) ->
-    Version = maps:get(version, Client, v1),
     try
         case Protocol of
             http ->

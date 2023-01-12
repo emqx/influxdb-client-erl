@@ -48,8 +48,8 @@ encode_(Point = #{measurement := Measurement, fields := Fields}) ->
       end,
       "\n"];
 
-encode_(_Point) ->
-    error(invalid_point).
+encode_(Point) ->
+    error({invalid_point, Point}).
 
 encode_measurement(Measurement) ->
     escape_special_chars(measurement, to_binary(Measurement)).

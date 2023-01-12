@@ -34,8 +34,8 @@ t_encode_line(_) ->
     ?assertEqual(<<"cp\\ u v\\ a\\=l\\,ue=0.64\n">>,
                  iolist_to_binary(influxdb_line:encode(#{measurement => 'cp u', fields => #{"v a=l,ue" => 0.64}}))),
 
-    ?assertException(error, invalid_point, influxdb_line:encode(#{measurement => 'cpu'})),
-    ?assertException(error, invalid_point, influxdb_line:encode(#{measurement => 'cpu', field => #{value => 1}, tags => #{host => 'serverA', region => 20}})),
+    ?assertException(error, {invalid_point, _}, influxdb_line:encode(#{measurement => 'cpu'})),
+    ?assertException(error, {invalid_point, _}, influxdb_line:encode(#{measurement => 'cpu', field => #{value => 1}, tags => #{host => 'serverA', region => 20}})),
 
     ok.
 

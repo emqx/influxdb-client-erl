@@ -1,7 +1,7 @@
 %% -*- mode: erlang -*-
 {VSN,
  [
-  {<<"1\\.1\\.[2-5]">>, [
+  {<<"1\\.1\\.[2-6]">>, [
     {load_module, influxdb_http, brutal_purge, soft_purge, []},
     {load_module, influxdb, brutal_purge, soft_purge, []}
   ]},

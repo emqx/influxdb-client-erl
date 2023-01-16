@@ -32,7 +32,7 @@ start_client(Options0) ->
         pool => Pool,
         protocol => Protocol
     },
-    Options = lists:keydelete(protocol, 1, lists:keydelete(pool, 1, Options0)), 
+    Options = lists:keydelete(protocol, 1, lists:keydelete(pool, 1, Options0)),
     case Protocol of
         http ->
             case ehttpc_sup:start_pool(Pool, Options) of
@@ -106,7 +106,7 @@ write(#{protocol := Protocol} = Client, Key, Points) ->
         {error, R}
     end.
 
--spec(write_async(Client, Points, {ReplayFun, Args}) -> ok | {error, term()}
+-spec(write_async(Client, Points, {ReplayFun, Args}) -> {ok, pid()} | {error, term()}
 when Client :: map(),
      Points :: [Point],
      Point :: #{measurement => atom() | binary() | list(),
@@ -154,7 +154,7 @@ write_async(#{protocol := Protocol} = Client, Key, Points, {ReplayFun, Args}) ->
 -spec(stop_client(Client :: map()) -> ok | term()).
 stop_client(#{pool := Pool, protocol := Protocol}) ->
     case Protocol of
-        http -> 
+        http ->
             ehttpc_sup:stop_pool(Pool);
         udp ->
             ecpool:stop_sup_pool(Pool)
@@ -183,9 +183,9 @@ path(Version, Options) ->
     List = lists:foldl(FoldlFun, [], List0),
     Path = path(Version),
     case length(List) of
-        0 -> 
+        0 ->
             Path;
-        _ -> 
+        _ ->
             Path ++ "?" ++ uri_string:compose_query(List)
     end.
 
@@ -197,7 +197,7 @@ qs_list(v1) ->
         {"precision", precision}
     ];
 qs_list(v2) ->
-    [ 
+    [
         {"org", org},
         {"bucket", bucket},
         {"precision", precision}

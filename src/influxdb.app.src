@@ -1,6 +1,6 @@
 {application,influxdb,
              [{description,"InfluxDB Client"},
-              {vsn, "1.1.5"},
+              {vsn, "1.1.6"},
               {modules,[]},
               {registered,[influxdb_sup]},
               {applications,[kernel,stdlib,ehttpc,ecpool]},

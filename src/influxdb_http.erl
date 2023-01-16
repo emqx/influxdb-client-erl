@@ -99,7 +99,8 @@ do_write(Worker, {_Path, _Headers, _Data} = Request) ->
     end.
 
 do_aysnc_write(Worker, Request, ReplayFunAndArgs) ->
-    ok = ehttpc:request_async(Worker, post, Request, 5000, ReplayFunAndArgs).
+    ok = ehttpc:request_async(Worker, post, Request, 5000, ReplayFunAndArgs),
+    {ok, Worker}.
 
 pick_worker(#{pool := Pool, pool_type := hash}, Key) ->
     ehttpc_pool:pick_worker(Pool, Key);

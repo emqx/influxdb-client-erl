@@ -60,7 +60,7 @@ t_write_(WriteProtocol, PoolType, Version) ->
     PassWord = <<"123qwe">>,
     DataBase = <<"mydb">>,
     Precision = <<"ms">>,
-    Pool = influxdb_test,
+    Pool = <<"influxdb_test">>,
     PoolSize = 16,
     Option = [ {host, Host}
              , {port, Port}

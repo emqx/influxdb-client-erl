@@ -8,6 +8,7 @@
 
 all() -> [ t_encode_line
          , t_write
+         , t_is_alive
          ].
 
 init_per_suite(Config) ->
@@ -55,26 +56,7 @@ t_write_(WriteProtocol, PoolType, Version) ->
                http -> 8086;
                udp -> 8089
            end,
-    HttpsEnabled = false,
-    UserName = <<"ddd">>,
-    PassWord = <<"123qwe">>,
-    DataBase = <<"mydb">>,
-    Precision = <<"ms">>,
-    Pool = <<"influxdb_test">>,
-    PoolSize = 16,
-    Option = [ {host, Host}
-             , {port, Port}
-             , {protocol, WriteProtocol}
-             , {https_enabled, HttpsEnabled}
-             , {pool, Pool}
-             , {pool_size, PoolSize}
-             , {pool_type, PoolType}
-             , {username, UserName}
-             , {password, PassWord}
-             , {database, DataBase}
-             , {precision, Precision}
-             , {version, Version}
-            ],
+    Option = options(Host, Port, WriteProtocol, PoolType, Version),
     application:ensure_all_started(influxdb),
     {ok, Client} = influxdb:start_client(Option),
     timer:sleep(500),
@@ -102,3 +84,49 @@ t_write_(WriteProtocol, PoolType, Version) ->
         end
     ),
     ok = influxdb:stop_client(Client).
+
+t_is_alive(_) ->
+    t_is_alive_(v1),
+    t_is_alive_(v2).
+
+t_is_alive_(Version) ->
+    application:ensure_all_started(influxdb),
+    Host = {127, 0, 0, 1},
+
+    Port0 = 8086,
+    Option0 = options(Host, Port0, http, random, Version),
+    {ok, Client0} = influxdb:start_client(Option0),
+    timer:sleep(500),
+    ?assertEqual(true, influxdb:is_alive(Client0)),
+    ?assertEqual(true, influxdb:is_alive(Client0, true)),
+    ok = influxdb:stop_client(Client0),
+
+    Port1 = 27013, % dummy port, is_alive should return false
+    Option1 = options(Host, Port1, http, random, Version),
+    {ok, Client1} = influxdb:start_client(Option1),
+    timer:sleep(500),
+    ?assertEqual(false, influxdb:is_alive(Client1)),
+    ?assertEqual({false, econnrefused}, influxdb:is_alive(Client1, true)),
+    ok = influxdb:stop_client(Client1).
+
+options(Host, Port, WriteProtocol, PoolType, Version) ->
+    HttpsEnabled = false,
+    UserName = <<"ddd">>,
+    PassWord = <<"123qwe">>,
+    DataBase = <<"mydb">>,
+    Precision = <<"ms">>,
+    Pool = <<"influxdb_test">>,
+    PoolSize = 16,
+    [ {host, Host}
+    , {port, Port}
+    , {protocol, WriteProtocol}
+    , {https_enabled, HttpsEnabled}
+    , {pool, Pool}
+    , {pool_size, PoolSize}
+    , {pool_type, PoolType}
+    , {username, UserName}
+    , {password, PassWord}
+    , {database, DataBase}
+    , {precision, Precision}
+    , {version, Version}
+    ].

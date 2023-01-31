@@ -15,18 +15,18 @@
 %%--------------------------------------------------------------------
 -module(influxdb_http).
 
--export([ is_alive/1
+-export([ is_alive/2
         , write/2
         , write/3
         , write_async/3
         , write_async/4]).
 
-is_alive(Client = #{version := Version}) ->
-    is_alive(Version, Client);
-is_alive(Client) ->
-    is_alive(v1, Client).
+is_alive(Client = #{version := Version}, ReturnReason) ->
+    is_alive(Version, Client, ReturnReason);
+is_alive(Client, ReturnReason) ->
+    is_alive(v1, Client, ReturnReason).
 
-is_alive(v2, Client = #{headers := Headers}) ->
+is_alive(v2, Client = #{headers := Headers}, ReturnReason) ->
     Path = "/ping",
     try
         Worker = pick_worker(Client, ignore),
@@ -39,13 +39,14 @@ is_alive(v2, Client = #{headers := Headers}) ->
                 true;
             {ok, 204, _, _} ->
                 true;
-            _ ->
-                false
+            Return ->
+                maybe_return_reason(Return, ReturnReason)
         end
-    catch _E:_R:_S ->
+    catch E:R:S ->
+        logger:error("[InfluxDB] is alive: ~0p ~0p ~0p", [E, R, S]),
         false
     end;
-is_alive(v1, Client) ->
+is_alive(v1, Client, ReturnReason) ->
     Path = "/ping",
     Headers = [{<<"verbose">>, <<"true">>}],
     try
@@ -55,8 +56,8 @@ is_alive(v1, Client) ->
                 true;
             {ok, 204, _, _} ->
                 true;
-            _ ->
-                false
+            Return ->
+                maybe_return_reason(Return, ReturnReason)
         end
     catch E:R:S ->
         logger:error("[InfluxDB] is alive: ~0p ~0p ~0p", [E, R, S]),
@@ -81,6 +82,15 @@ write_async(Client = #{path := Path, headers := Headers}, Key, Data, ReplayFunAn
 
 %%==============================================================================
 %% Internal funcs
+maybe_return_reason({ok, ReturnCode, _}, true) ->
+    {false, ReturnCode};
+maybe_return_reason({ok, ReturnCode, _, Body}, true) ->
+    {false, {ReturnCode, Body}};
+maybe_return_reason({error, Reason}, true) ->
+    {false, Reason};
+maybe_return_reason(_, _) ->
+    false.
+
 do_write(Worker, {_Path, _Headers, _Data} = Request) ->
     try ehttpc:request(Worker, post, Request) of
         {ok, 204, _} ->

@@ -18,6 +18,7 @@
 
 -export([ start_client/1
         , is_alive/1
+        , is_alive/2
         , write/2
         , write/3
         , write_async/3
@@ -57,10 +58,14 @@ start_client(Options0) ->
     end.
 
 -spec(is_alive(Client :: map()) -> true | false).
-is_alive(#{protocol := Protocol} = Client) ->
+is_alive(Client) ->
+    is_alive(Client, false).
+
+-spec(is_alive(Client :: map(), ReturnReason :: boolean()) -> true | false | {false, Reason :: term()}).
+is_alive(#{protocol := Protocol} = Client, ReturnReason) ->
     case Protocol of
         http ->
-            influxdb_http:is_alive(Client);
+            influxdb_http:is_alive(Client, ReturnReason);
         udp ->
             true
     end.

@@ -43,7 +43,7 @@ is_alive(v2, Client = #{headers := Headers}, ReturnReason) ->
                 maybe_return_reason(Return, ReturnReason)
         end
     catch E:R:S ->
-        logger:error("[InfluxDB] is alive: ~0p ~0p ~0p", [E, R, S]),
+        logger:error("[InfluxDB] is_alive exception: ~0p ~0p ~0p", [E, R, S]),
         false
     end;
 is_alive(v1, Client, ReturnReason) ->
@@ -60,7 +60,7 @@ is_alive(v1, Client, ReturnReason) ->
                 maybe_return_reason(Return, ReturnReason)
         end
     catch E:R:S ->
-        logger:error("[InfluxDB] is alive: ~0p ~0p ~0p", [E, R, S]),
+        logger:error("[InfluxDB] is_alive exception: ~0p ~0p ~0p", [E, R, S]),
         false
     end.
 

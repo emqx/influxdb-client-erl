@@ -43,8 +43,8 @@ is_alive(v2, Client = #{headers := Headers}, ReturnReason) ->
                 maybe_return_reason(Return, ReturnReason)
         end
     catch E:R:S ->
-        logger:error("[InfluxDB] is_alive exception: ~0p ~0p ~0p", [E, R, S]),
-        false
+        log_or_return_reason(#{exception => E, reason => R, stacktrace => S},
+                             ReturnReason)
     end;
 is_alive(v1, Client, ReturnReason) ->
     Path = "/ping",
@@ -60,8 +60,8 @@ is_alive(v1, Client, ReturnReason) ->
                 maybe_return_reason(Return, ReturnReason)
         end
     catch E:R:S ->
-        logger:error("[InfluxDB] is_alive exception: ~0p ~0p ~0p", [E, R, S]),
-        false
+        log_or_return_reason(#{exception => E, reason => R, stacktrace => S},
+                             ReturnReason)
     end.
 
 write(Client = #{path := Path, headers := Headers}, Data) ->
@@ -89,6 +89,12 @@ maybe_return_reason({ok, ReturnCode, _, Body}, true) ->
 maybe_return_reason({error, Reason}, true) ->
     {false, Reason};
 maybe_return_reason(_, _) ->
+    false.
+
+log_or_return_reason(#{} = Reason, true) ->
+    {false, Reason};
+log_or_return_reason(#{exception := E, reason := R, stacktrace := S}, _) ->
+    logger:error("[InfluxDB] is_alive exception: ~0p ~0p ~0p", [E, R, S]),
     false.
 
 do_write(Worker, {_Path, _Headers, _Data} = Request) ->

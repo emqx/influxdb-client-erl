@@ -107,7 +107,16 @@ t_is_alive_(Version) ->
     timer:sleep(500),
     ?assertEqual(false, influxdb:is_alive(Client1)),
     ?assertEqual({false, econnrefused}, influxdb:is_alive(Client1, true)),
-    ok = influxdb:stop_client(Client1).
+    ok = influxdb:stop_client(Client1),
+
+    {ok, Client2} = influxdb:start_client(Option0),
+    % We remove the pool so that we will cause an exception
+    BadClient = maps:remove(pool, Client2),
+    timer:sleep(500),
+    ?assertEqual(false, influxdb:is_alive(BadClient)),
+    ?assertMatch({false, #{exception := error, reason := function_clause}},
+                 influxdb:is_alive(BadClient, true)),
+    ok = influxdb:stop_client(Client2).
 
 options(Host, Port, WriteProtocol, PoolType, Version) ->
     HttpsEnabled = false,

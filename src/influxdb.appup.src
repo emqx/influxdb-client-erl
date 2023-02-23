@@ -1,10 +1,16 @@
 %% -*- mode: erlang -*-
 {VSN,
  [
+  {"1.1.8", [
+    {load_module, influxdb_line, brutal_purge, soft_purge, []},
+    {load_module, influxdb_http, brutal_purge, soft_purge, []},
+    {load_module, influxdb, brutal_purge, soft_purge, []}
+  ]},
   {"1.1.7", []}, %% no modules changed
   {<<"1\\.1\\.[2-6]">>, [
     {load_module, influxdb_http, brutal_purge, soft_purge, []},
-    {load_module, influxdb, brutal_purge, soft_purge, []}
+    {load_module, influxdb, brutal_purge, soft_purge, []},
+    {load_module, influxdb_line,brutal_purge,soft_purge,[]}
   ]},
   {"1.1.1", [
     {load_module, influxdb_line, brutal_purge, soft_purge, []},
@@ -24,10 +30,16 @@
    {<<".*">>, []}
  ],
  [
+  {"1.1.8", [
+    {load_module, influxdb_line, brutal_purge, soft_purge, []},
+    {load_module, influxdb_http, brutal_purge, soft_purge, []},
+    {load_module, influxdb, brutal_purge, soft_purge, []}
+  ]},
   {"1.1.7", []}, %% no modules changed
   {<<"1\\.1\\.[2-6]">>, [
     {load_module, influxdb_http, brutal_purge, soft_purge, []},
-    {load_module, influxdb, brutal_purge, soft_purge, []}
+    {load_module, influxdb, brutal_purge, soft_purge, []},
+    {load_module, influxdb_line,brutal_purge,soft_purge,[]}
   ]},
   {"1.1.1", [
     {load_module, influxdb_line, brutal_purge, soft_purge, []},

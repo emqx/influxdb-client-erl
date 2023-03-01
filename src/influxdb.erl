@@ -186,7 +186,7 @@ path(Version, Options) ->
             end
         end,
     List = lists:foldl(FoldlFun, [], List0),
-    Path = path(Version),
+    Path = proplists:get_value(path, Options, path(Version)),
     case length(List) of
         0 ->
             Path;

@@ -21,11 +21,17 @@ Option = [ {host, "127.0.0.1"}
          , {pool, influxdb_client_pool}
          , {pool_size, 8}
          , {pool_type, random}
+         , {version, v1},
+         , {path, undefined}
          , {username, <<"uname">>}
-         , {password, <<"'pwd'">>}
+         , {password, <<"pwd">>}
          , {database, <<"mydb">>}
          , {precision, <<"ms">>}].
 ```
+
+* The client supports the `v1` and `v2` API versions of InfluxDB. Using `v1` by default, the version automatically chooses the write endpoint path(for `v1`, it's `/write`).
+* The optional `path` option specifies the write endpoint path manually. The other TSDB supporting the InfluxDB writing protocol may have different write endpoint paths. You can configure it with this option.
+
 
 ``` erlang
 %% udp

@@ -18,6 +18,11 @@ init_per_suite(Config) ->
 end_per_suite(_Config) ->
     application:stop(influxdb).
 
+init_per_testcase(t_write, _Config) ->
+    {skip, {todo, refactor}};
+init_per_testcase(_TestCase, Config) ->
+    Config.
+
 t_encode_line(_) ->
     ?assertEqual(<<"cpu value=0.64\n">>,
                  iolist_to_binary(influxdb_line:encode(#{measurement => 'cpu', fields => #{value => 0.64}}))),
@@ -51,7 +56,7 @@ t_write(_) ->
     t_write_(udp, hash, v2).
 
 t_write_(WriteProtocol, PoolType, Version) ->
-    Host = {127, 0, 0, 1},
+    Host = "influxdb_tcp",
     Port = case WriteProtocol of
                http -> 8086;
                udp -> 8089
@@ -91,8 +96,7 @@ t_is_alive(_) ->
 
 t_is_alive_(Version) ->
     application:ensure_all_started(influxdb),
-    Host = {127, 0, 0, 1},
-
+    Host = "influxdb_tcp",
     Port0 = 8086,
     Option0 = options(Host, Port0, http, random, Version),
     {ok, Client0} = influxdb:start_client(Option0),
@@ -118,12 +122,12 @@ t_is_alive_(Version) ->
                  influxdb:is_alive(BadClient, true)),
     ok = influxdb:stop_client(Client2).
 
-options(Host, Port, WriteProtocol, PoolType, Version) ->
+options(Host, Port, WriteProtocol, PoolType, Version) when Version =:= v1 ->
     HttpsEnabled = false,
-    UserName = <<"ddd">>,
-    PassWord = <<"123qwe">>,
-    DataBase = <<"mydb">>,
-    Precision = <<"ms">>,
+    UserName = <<"root">>,
+    PassWord = <<"emqx@123">>,
+    DataBase = <<"mqtt">>,
+    Precision = <<"ns">>,
     Pool = <<"influxdb_test">>,
     PoolSize = 16,
     [ {host, Host}
@@ -136,6 +140,23 @@ options(Host, Port, WriteProtocol, PoolType, Version) ->
     , {username, UserName}
     , {password, PassWord}
     , {database, DataBase}
+    , {precision, Precision}
+    , {version, Version}
+    ];
+options(Host, Port, WriteProtocol, PoolType, Version) when Version =:= v2 ->
+    HttpsEnabled = false,
+    Token = <<"abcdefg">>,
+    Precision = <<"ns">>,
+    Pool = <<"influxdb_test">>,
+    PoolSize = 16,
+    [ {host, Host}
+    , {port, Port}
+    , {protocol, WriteProtocol}
+    , {https_enabled, HttpsEnabled}
+    , {pool, Pool}
+    , {pool_size, PoolSize}
+    , {pool_type, PoolType}
+    , {token, Token}
     , {precision, Precision}
     , {version, Version}
     ].

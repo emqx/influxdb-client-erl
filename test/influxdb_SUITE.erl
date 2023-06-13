@@ -9,6 +9,7 @@
 all() -> [ t_encode_line
          , t_write
          , t_is_alive
+         , t_check_auth
          ].
 
 init_per_suite(Config) ->
@@ -56,7 +57,7 @@ t_write(_) ->
     t_write_(udp, hash, v2).
 
 t_write_(WriteProtocol, PoolType, Version) ->
-    Host = "influxdb_tcp",
+    Host = os:getenv("INFLUX_TCP_HOST", "influxdb_tcp"),
     Port = case WriteProtocol of
                http -> 8086;
                udp -> 8089
@@ -96,7 +97,7 @@ t_is_alive(_) ->
 
 t_is_alive_(Version) ->
     application:ensure_all_started(influxdb),
-    Host = "influxdb_tcp",
+    Host = os:getenv("INFLUX_TCP_HOST", "influxdb_tcp"),
     Port0 = 8086,
     Option0 = options(Host, Port0, http, random, Version),
     {ok, Client0} = influxdb:start_client(Option0),
@@ -121,6 +122,25 @@ t_is_alive_(Version) ->
     ?assertMatch({false, #{exception := error, reason := function_clause}},
                  influxdb:is_alive(BadClient, true)),
     ok = influxdb:stop_client(Client2).
+
+t_check_auth(_) ->
+    t_check_auth_(v1),
+    t_check_auth_(v2).
+
+t_check_auth_(Version) ->
+    application:ensure_all_started(influxdb),
+    Host = os:getenv("INFLUX_TCP_HOST", "influxdb_tcp"),
+    Port = 8086,
+    Option0 = options(Host, Port, http, random, Version),
+    {ok, Client0} = influxdb:start_client(Option0),
+    timer:sleep(500),
+    ?assertEqual(ok, influxdb:check_auth(Client0)),
+    ok = influxdb:stop_client(Client0),
+    Option1 = options_wrong_credentials(Host, Port, http, random, Version),
+    {ok, Client1} = influxdb:start_client(Option1),
+    timer:sleep(500),
+    ?assertEqual({error, not_authorized}, influxdb:check_auth(Client1)),
+    ok = influxdb:stop_client(Client1).
 
 options(Host, Port, WriteProtocol, PoolType, Version) when Version =:= v1 ->
     HttpsEnabled = false,
@@ -160,3 +180,10 @@ options(Host, Port, WriteProtocol, PoolType, Version) when Version =:= v2 ->
     , {precision, Precision}
     , {version, Version}
     ].
+
+options_wrong_credentials(Host, Port, WriteProtocol, PoolType, Version) when Version =:= v1 ->
+    Options = options(Host, Port, WriteProtocol, PoolType, Version),
+    lists:keyreplace(password, 1, Options, {password, <<"wrong_password">>});
+options_wrong_credentials(Host, Port, WriteProtocol, PoolType, Version) when Version =:= v2 ->
+    Options = options(Host, Port, WriteProtocol, PoolType, Version),
+    lists:keyreplace(token, 1, Options, {token, <<"wrong_token">>}).

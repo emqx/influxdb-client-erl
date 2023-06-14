@@ -1,0 +1,30 @@
+version: '3'
+
+services:
+  erlang:
+    container_name: erlang
+    image: erlang:24.3.4.2
+    volumes:
+      - ./:/influxdb_client_erl
+    working_dir: /influxdb_client_erl
+    depends_on:
+      - influxdb_tcp
+    tty: true
+
+  influxdb_tcp:
+    container_name: influxdb_tcp
+    image: influxdb:${INFLUXDB_TAG}
+    expose:
+      - "8086"
+      - "8089/udp"
+      - "8083"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: root
+      DOCKER_INFLUXDB_INIT_PASSWORD: emqx@123
+      DOCKER_INFLUXDB_INIT_ORG: emqx
+      DOCKER_INFLUXDB_INIT_BUCKET: mqtt
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: abcdefg
+    volumes:
+      - "./docker-compose-file/setup-v1.sh:/docker-entrypoint-initdb.d/setup-v1.sh"
+    restart: always

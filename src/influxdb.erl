@@ -23,6 +23,7 @@
         , write/3
         , write_async/3
         , write_async/4
+        , check_auth/1
         , stop_client/1]).
 
 -spec(start_client(list()) -> {ok, Client :: map()} | {error, {already_started, Client :: map()}} | {error, Reason :: term()}).
@@ -88,6 +89,29 @@ write(#{protocol := Protocol} = Client, Points) ->
     catch E:R:S ->
         logger:error("[InfluxDB] Encode ~0p failed: ~0p ~0p ~p", [Points, E, R, S]),
         {error, R}
+    end.
+
+-spec check_auth(Client :: map()) -> ok | {error, not_authorized} | {error, term()}.
+check_auth(#{protocol := Protocol, auth_path := AuthPath} = Client0) ->
+    FakePoint = #{fields => #{<<"check_auth">> => <<"">>}, measurement => <<"check_auth">>},
+    Client = Client0#{path := AuthPath},
+    Ret =
+        try
+            case Protocol of
+                http ->
+                    influxdb_http:write(Client, influxdb_line:encode(FakePoint));
+                udp ->
+                    influxdb_udp:write(Client, influxdb_line:encode(FakePoint))
+            end
+        catch E:R:S ->
+            logger:error("[InfluxDB] Check auth ~0p failed: ~0p ~0p ~p", [FakePoint, E, R, S]),
+            {error, {E, R}}
+        end,
+    case Ret of
+        {_, {200, _, _}} -> ok;
+        {_, {401, _, _}} -> {error, not_authorized};
+        {error, Err} -> {error, Err};
+        Err -> {error, Err}
     end.
 
 -spec(write(Client, Key, Points) -> ok | {error, term()}
@@ -171,12 +195,27 @@ stop_client(#{pool := Pool, protocol := Protocol}) ->
 
 http_clients_options(Options) ->
     Version = proplists:get_value(version, Options, v1),
-    Path = path(Version, Options),
+    Path = write_path(Version, Options),
+    AuthPath = auth_path(Version, Options),
     Headers = header(Version, Options),
     PoolType = proplists:get_value(pool_type, Options, random),
-    #{path => Path, headers => Headers, version => Version, pool_type => PoolType}.
+    #{
+        path => Path,
+        auth_path => AuthPath,
+        headers => Headers,
+        version => Version,
+        pool_type => PoolType
+    }.
 
-path(Version, Options) ->
+write_path(Version, Options) ->
+    BasePath = write_path(Version),
+    path(BasePath, Version, Options).
+
+auth_path(Version, Options) ->
+    BasePath = auth_path(Version),
+    path(BasePath, Version, Options).
+
+path(BasePath, Version, Options) ->
     List0 = qs_list(Version),
     FoldlFun =
         fun({K1, K2}, Acc) ->
@@ -186,12 +225,11 @@ path(Version, Options) ->
             end
         end,
     List = lists:foldl(FoldlFun, [], List0),
-    Path = proplists:get_value(path, Options, path(Version)),
     case length(List) of
         0 ->
-            Path;
+            BasePath;
         _ ->
-            Path ++ "?" ++ uri_string:compose_query(List)
+            BasePath ++ "?" ++ uri_string:compose_query(List)
     end.
 
 qs_list(v1) ->
@@ -208,11 +246,13 @@ qs_list(v2) ->
         {"precision", precision}
     ].
 
-path(v1) -> "/write";
-path(v2) -> "/api/v2/write".
+write_path(v1) -> "/write";
+write_path(v2) -> "/api/v2/write".
 
 header(v1, _) ->
     [{<<"Content-type">>, <<"text/plain; charset=utf-8">>}];
 header(v2, Options) ->
     Token = proplists:get_value(token, Options, <<"">>),
     [{<<"Authorization">>, <<"Token ", Token/binary>>}] ++ header(v1, Options).
+
+auth_path(_Version) -> "/query".

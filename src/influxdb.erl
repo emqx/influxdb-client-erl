@@ -209,13 +209,15 @@ http_clients_options(Options) ->
 
 write_path(Version, Options) ->
     BasePath = write_path(Version),
-    path(BasePath, Version, Options).
+    RawParams = [],
+    path(BasePath, RawParams, Version, Options).
 
 auth_path(Version, Options) ->
     BasePath = auth_path(Version),
-    path(BasePath, Version, Options).
+    RawParams = [{"q", "show databases"}],
+    path(BasePath, RawParams, Version, Options).
 
-path(BasePath, Version, Options) ->
+path(BasePath, RawParams, Version, Options) ->
     List0 = qs_list(Version),
     FoldlFun =
         fun({K1, K2}, Acc) ->
@@ -224,7 +226,7 @@ path(BasePath, Version, Options) ->
                 Val -> [{K1, Val} | Acc]
             end
         end,
-    List = lists:foldl(FoldlFun, [], List0),
+    List = lists:foldl(FoldlFun, RawParams, List0),
     case length(List) of
         0 ->
             BasePath;

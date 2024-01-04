@@ -17,6 +17,7 @@
 -include("influxdb.hrl").
 
 -export([ start_client/1
+        , update_precision/2
         , is_alive/1
         , is_alive/2
         , write/2
@@ -57,6 +58,18 @@ start_client(Options0) ->
                     {error, Reason}
             end
     end.
+
+-spec update_precision(Client :: map(), precision()) -> Client :: map().
+update_precision(#{protocol := http, opts := Opts0} = Client, Precision) ->
+    Opts1 = [{precision, Precision} | proplists:delete(precision, Opts0)],
+    Version = proplists:get_value(version, Opts1, v1),
+    Client#{
+        path => write_path(Version, Opts1),
+        auth_path => auth_path(Version, Opts1),
+        opts => Opts1
+    };
+update_precision(#{protocol := udp} = Client, _Precision) ->
+    Client.
 
 -spec(is_alive(Client :: map()) -> true | false).
 is_alive(Client) ->
@@ -204,7 +217,8 @@ http_clients_options(Options) ->
         auth_path => AuthPath,
         headers => Headers,
         version => Version,
-        pool_type => PoolType
+        pool_type => PoolType,
+        opts => Options
     }.
 
 write_path(Version, Options) ->
@@ -223,7 +237,7 @@ path(BasePath, RawParams, Version, Options) ->
         fun({K1, K2}, Acc) ->
             case proplists:get_value(K2, Options) of
                 undefined -> Acc;
-                Val -> [{K1, Val} | Acc]
+                Val -> [{str(K1), str(Val)} | Acc]
             end
         end,
     List = lists:foldl(FoldlFun, RawParams, List0),
@@ -258,3 +272,7 @@ header(v2, Options) ->
     [{<<"Authorization">>, <<"Token ", Token/binary>>}] ++ header(v1, Options).
 
 auth_path(_Version) -> "/query".
+
+str(A) when is_atom(A) -> atom_to_list(A);
+str(B) when is_binary(B) -> binary_to_list(B);
+str(L) when is_list(L) -> L.

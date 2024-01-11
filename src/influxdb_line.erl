@@ -66,12 +66,16 @@ encode_fields([{Key, Value} | Rest]) ->
 encode_field(Key, Value) ->
     [escape_special_chars(field_key, to_binary(Key)), "=", encode_field_value(Value)].
 
-encode_field_value({int, Value}) when is_integer(Value) ->
-    Int = erlang:integer_to_binary(Value),
+encode_field_value({int, Value}) ->
+    Int = to_binary2(Value),
     <<Int/binary, "i">>;
-encode_field_value({uint, Value}) when is_integer(Value) ->
-    Int = erlang:integer_to_binary(Value),
+encode_field_value({uint, Value}) ->
+    Int = to_binary2(Value),
     <<Int/binary, "u">>;
+encode_field_value({float, Value}) when is_float(Value) ->
+    erlang:float_to_binary(Value, [compact, {decimals, 12}]);
+encode_field_value({float, Value}) ->
+    to_binary2(Value);
 encode_field_value(Value) when is_integer(Value) ->
     erlang:integer_to_binary(Value);
 encode_field_value(Value) when is_float(Value) ->

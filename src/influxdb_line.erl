@@ -76,6 +76,13 @@ encode_field_value({float, Value}) when is_float(Value) ->
     erlang:float_to_binary(Value, [compact, {decimals, 12}]);
 encode_field_value({float, Value}) ->
     to_binary2(Value);
+encode_field_value({string, Value}) ->
+    Bin = escape_special_chars(field_value, to_binary2(Value)),
+    <<?double_quote/binary, Bin/binary, ?double_quote/binary>>;
+encode_field_value({string_list, ValueList}) ->
+    ValueStr = list_to_binary([to_binary2(Value) || Value <- ValueList]),
+    Bin = escape_special_chars(field_value, ValueStr),
+    <<?double_quote/binary, Bin/binary, ?double_quote/binary>>;
 encode_field_value(Value) when is_integer(Value) ->
     erlang:integer_to_binary(Value);
 encode_field_value(Value) when is_float(Value) ->

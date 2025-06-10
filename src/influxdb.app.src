@@ -3,5 +3,5 @@
               {vsn,"git"},
               {modules,[]},
               {registered,[influxdb_sup]},
-              {applications,[kernel,stdlib,ehttpc,ecpool]},
+              {applications,[kernel,stdlib,ssl,ehttpc,ecpool]},
               {mod,{influxdb_app,[]}}]}.

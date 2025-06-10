@@ -28,12 +28,8 @@
                   | {precision, precision()}
                   | {https_enabled, boolean()}
                   | {ssl, ssloptions()}.
--type ssloptions() :: [ssloption()].
--type ssloption() :: {versions, [ssl:protocol_version()]}
-                   | {keyfile, file:filename()}
-                   | {certfile, file:filename()}
-                   | {cacertfile, file:filename()}
-                   | {ciphers, string()}.
+
+-type ssloptions() :: [ssl:tls_client_option()].
 
 -type(kv() :: {Key :: atom() | string() | binary(), Value :: atom() | string() | integer() | binary()}).
 

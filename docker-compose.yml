@@ -1,9 +1,7 @@
-version: '3'
-
 services:
   erlang:
     container_name: erlang
-    image: erlang:24.3.4.2
+    image: erlang:27
     volumes:
       - ./:/influxdb_client_erl
     working_dir: /influxdb_client_erl

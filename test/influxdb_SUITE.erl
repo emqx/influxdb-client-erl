@@ -57,7 +57,7 @@ t_write(_) ->
     t_write_(udp, hash, v2).
 
 t_write_(WriteProtocol, PoolType, Version) ->
-    Host = os:getenv("INFLUX_TCP_HOST", "influxdb_tcp"),
+    Host = host(Version),
     Port = case WriteProtocol of
                http -> 8086;
                udp -> 8089
@@ -93,44 +93,46 @@ t_write_(WriteProtocol, PoolType, Version) ->
 
 t_is_alive(_) ->
     t_is_alive_(v1),
-    t_is_alive_(v2).
+    t_is_alive_(v2),
+    t_is_alive_(v3).
 
 t_is_alive_(Version) ->
     application:ensure_all_started(influxdb),
-    Host = os:getenv("INFLUX_TCP_HOST", "influxdb_tcp"),
-    Port0 = 8086,
+    Host = host(Version),
+    Port0 = influxdb_port(Version),
     Option0 = options(Host, Port0, http, random, Version),
     {ok, Client0} = influxdb:start_client(Option0),
     timer:sleep(500),
-    ?assertEqual(true, influxdb:is_alive(Client0)),
-    ?assertEqual(true, influxdb:is_alive(Client0, true)),
+    ?assertEqual(true, influxdb:is_alive(Client0, true), #{client => Client0}),
+    ?assertEqual(true, influxdb:is_alive(Client0), #{client => Client0}),
     ok = influxdb:stop_client(Client0),
 
     Port1 = 27013, % dummy port, is_alive should return false
     Option1 = options(Host, Port1, http, random, Version),
     {ok, Client1} = influxdb:start_client(Option1),
     timer:sleep(500),
-    ?assertEqual(false, influxdb:is_alive(Client1)),
     ?assertEqual({false, econnrefused}, influxdb:is_alive(Client1, true)),
+    ?assertEqual(false, influxdb:is_alive(Client1)),
     ok = influxdb:stop_client(Client1),
 
     {ok, Client2} = influxdb:start_client(Option0),
     % We remove the pool so that we will cause an exception
     BadClient = maps:remove(pool, Client2),
     timer:sleep(500),
-    ?assertEqual(false, influxdb:is_alive(BadClient)),
     ?assertMatch({false, #{exception := error, reason := function_clause}},
                  influxdb:is_alive(BadClient, true)),
+    ?assertEqual(false, influxdb:is_alive(BadClient)),
     ok = influxdb:stop_client(Client2).
 
 t_check_auth(_) ->
     t_check_auth_(v1),
-    t_check_auth_(v2).
+    t_check_auth_(v2),
+    t_check_auth_(v3).
 
 t_check_auth_(Version) ->
     application:ensure_all_started(influxdb),
-    Host = os:getenv("INFLUX_TCP_HOST", "influxdb_tcp"),
-    Port = 8086,
+    Host = host(Version),
+    Port = influxdb_port(Version),
     Option0 = options(Host, Port, http, random, Version),
     {ok, Client0} = influxdb:start_client(Option0),
     timer:sleep(500),
@@ -141,6 +143,16 @@ t_check_auth_(Version) ->
     timer:sleep(500),
     ?assertEqual({error, not_authorized}, influxdb:check_auth(Client1)),
     ok = influxdb:stop_client(Client1).
+
+host(v3) ->
+    os:getenv("INFLUX_TCP_HOST_V3", "influxdb_tcp_v3");
+host(_) ->
+    os:getenv("INFLUX_TCP_HOST", "influxdb_tcp").
+
+influxdb_port(v3) ->
+    8181;
+influxdb_port(_) ->
+    8086.
 
 options(Host, Port, WriteProtocol, PoolType, Version) when Version =:= v1 ->
     HttpsEnabled = false,
@@ -179,11 +191,44 @@ options(Host, Port, WriteProtocol, PoolType, Version) when Version =:= v2 ->
     , {token, Token}
     , {precision, Precision}
     , {version, Version}
+    ];
+options(Host, Port, WriteProtocol, PoolType, Version) when Version =:= v3 ->
+    HttpsEnabled = false,
+    Token = v3_token(HttpsEnabled),
+    Precision = <<"ns">>,
+    Pool = <<"influxdb_test">>,
+    PoolSize = 16,
+    Database = <<"mqtt">>,
+    [ {host, Host}
+    , {port, Port}
+    , {protocol, WriteProtocol}
+    , {https_enabled, HttpsEnabled}
+    , {pool, Pool}
+    , {pool_size, PoolSize}
+    , {pool_type, PoolType}
+    , {token, Token}
+    , {database, Database}
+    , {precision, Precision}
+    , {version, Version}
     ].
 
 options_wrong_credentials(Host, Port, WriteProtocol, PoolType, Version) when Version =:= v1 ->
     Options = options(Host, Port, WriteProtocol, PoolType, Version),
     lists:keyreplace(password, 1, Options, {password, <<"wrong_password">>});
-options_wrong_credentials(Host, Port, WriteProtocol, PoolType, Version) when Version =:= v2 ->
+options_wrong_credentials(Host, Port, WriteProtocol, PoolType, Version) when Version =:= v2; Version =:= v3 ->
     Options = options(Host, Port, WriteProtocol, PoolType, Version),
     lists:keyreplace(token, 1, Options, {token, <<"wrong_token">>}).
+
+shared_secret_path() ->
+    os:getenv("CI_SHARED_SECRET_PATH", "/var/lib/secret").
+
+v3_token(UseTLS) ->
+    File =
+        case UseTLS of
+            true -> "influxv3_tls.json";
+            false -> "influxv3_tcp.json"
+        end,
+    Path = filename:join([shared_secret_path(), File]),
+    {ok, Raw} = file:read_file(Path),
+    #{<<"token">> := Token} = json:decode(Raw),
+    Token.

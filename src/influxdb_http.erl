@@ -26,7 +26,7 @@ is_alive(Client = #{version := Version}, ReturnReason) ->
 is_alive(Client, ReturnReason) ->
     is_alive(v1, Client, ReturnReason).
 
-is_alive(v2, Client = #{headers := Headers}, ReturnReason) ->
+is_alive(V, Client = #{headers := Headers}, ReturnReason) when V == v2; V == v3 ->
     Path = "/ping",
     try
         Worker = pick_worker(Client, ignore),

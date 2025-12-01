@@ -17,15 +17,20 @@ jobs:
         env:
           INFLUXDB_TAG: ${{ matrix.influxdb_tag }}
         run: |
-          docker compose -f ./docker-compose.yml up -d
+          mkdir -p /tmp/emqx-ci/emqx-shared-secret
+          chmod 0777 /tmp/emqx-ci/emqx-shared-secret
+          docker compose -f ./docker-compose.yml up -d --quiet-pull
           sleep 15
           docker exec -i erlang sh -c "make xref"
-          docker exec -i erlang sh -c "make dialyzer"
           docker exec -i erlang sh -c "make eunit"
           docker exec -i erlang sh -c "make ct"
+          docker exec -i erlang sh -c "make dialyzer"
       - name: get container logs on failure
         if: failure()
         run: |
           echo "============== influxdb_tcp-begin =============="
           docker logs influxdb_tcp
           echo "============== influxdb_tcp-end =============="
+          echo "============== influxdb_tcp_v3-begin =============="
+          docker logs influxdb_tcp_v3
+          echo "============== influxdb_tcp_v3-end =============="

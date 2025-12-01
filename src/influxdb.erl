@@ -105,6 +105,33 @@ write(#{protocol := Protocol} = Client, Points) ->
     end.
 
 -spec check_auth(Client :: map()) -> ok | {error, not_authorized} | {error, term()}.
+check_auth(#{version := v3} = Client0) ->
+    #{protocol := Protocol, auth_path := AuthPath, opts := Opts} = Client0,
+    Client = Client0#{path := AuthPath},
+    Body = json:encode(#{
+         db => proplists:get_value(database, Opts),
+         q => <<"show tables">>
+     }),
+    Ret =
+        try
+            case Protocol of
+                http ->
+                    influxdb_http:write(Client, Body);
+                udp ->
+                    influxdb_udp:write(Client, Body)
+            end
+        catch E:R:S ->
+            logger:error("[InfluxDB] Check auth ~0p failed: ~0p ~0p ~p", [Body, E, R, S]),
+            {error, {E, R}}
+        end,
+    case Ret of
+        {_, {200, _, _}} -> ok;
+        {_, {404, _, _}} -> ok;
+        {_, {401, _}} -> {error, not_authorized};
+        {_, {401, _, _}} -> {error, not_authorized};
+        {error, Err} -> {error, Err};
+        Err -> {error, Err}
+    end;
 check_auth(#{protocol := Protocol, auth_path := AuthPath} = Client0) ->
     FakePoint = #{fields => #{<<"check_auth">> => <<"">>}, measurement => <<"check_auth">>},
     Client = Client0#{path := AuthPath},
@@ -260,17 +287,26 @@ qs_list(v2) ->
         {"org", org},
         {"bucket", bucket},
         {"precision", precision}
+    ];
+qs_list(v3) ->
+    [
+        {"db", database}
     ].
 
 write_path(v1) -> "/write";
-write_path(v2) -> "/api/v2/write".
+write_path(v2) -> "/api/v2/write";
+write_path(v3) -> "/api/v3/write_lp".
 
 header(v1, _) ->
     [{<<"Content-type">>, <<"text/plain; charset=utf-8">>}];
 header(v2, Options) ->
     Token = proplists:get_value(token, Options, <<"">>),
-    [{<<"Authorization">>, <<"Token ", Token/binary>>}] ++ header(v1, Options).
+    [{<<"Authorization">>, <<"Token ", Token/binary>>} | header(v1, Options)];
+header(v3, Options) ->
+    Token = proplists:get_value(token, Options, <<"">>),
+    [{<<"Authorization">>, <<"Bearer ", Token/binary>>} | header(v1, Options)].
 
+auth_path(v3) -> "/api/v3/query_sql";
 auth_path(_Version) -> "/query".
 
 str(A) when is_atom(A) -> atom_to_list(A);

@@ -16,6 +16,7 @@
 -module(influxdb_http).
 
 -export([ is_alive/2
+        , check_auth/1
         , write/2
         , write/3
         , write_async/3
@@ -64,6 +65,22 @@ is_alive(v1, Client, ReturnReason) ->
                              ReturnReason)
     end.
 
+%% @doc Check authentication against the InfluxDB server.
+%% For v2, uses GET /api/v2/buckets with the Authorization header.
+%% For v3, uses POST /api/v3/query_sql with the Authorization header (empty body).
+%% For v1, uses GET /query (without "q" param) with credentials in query string;
+%%   returns ok on 200 or 400 (missing "q" means auth passed), error on 401.
+-spec check_auth(Client :: map()) -> ok | {error, not_authorized} | {error, term()}.
+check_auth(#{version := v2} = Client) ->
+    check_auth_v2(Client);
+check_auth(#{version := v3} = Client) ->
+    check_auth_v3(Client);
+check_auth(#{version := v1} = Client) ->
+    check_auth_v1(Client);
+check_auth(Client) ->
+    %% default to v1
+    check_auth_v1(Client).
+
 write(Client = #{path := Path, headers := Headers}, Data) ->
     Request = {Path, Headers, Data},
     do_write(pick_worker(Client, ignore), Request).
@@ -82,6 +99,107 @@ write_async(Client = #{path := Path, headers := Headers}, Key, Data, ReplayFunAn
 
 %%==============================================================================
 %% Internal funcs
+
+check_auth_v2(#{headers := Headers} = Client) ->
+    Path = "/api/v2/buckets?limit=1",
+    try
+        Worker = pick_worker(Client, ignore),
+        case ehttpc:request(Worker, get, {Path, Headers}) of
+            {ok, Code, _} when Code >= 200, Code < 300 ->
+                ok;
+            {ok, Code, _, _} when Code >= 200, Code < 300 ->
+                ok;
+            {ok, 401, _} ->
+                {error, not_authorized};
+            {ok, 401, _, _} ->
+                {error, not_authorized};
+            {ok, Code, _} ->
+                {error, {unexpected_status, Code}};
+            {ok, Code, _, Body} ->
+                {error, {unexpected_status, Code, Body}};
+            {error, Reason} ->
+                {error, Reason}
+        end
+    catch E:R:S ->
+        logger:error("[InfluxDB] check_auth v2 exception: ~0p ~0p ~0p", [E, R, S]),
+        {error, {E, R}}
+    end.
+
+check_auth_v3(#{headers := Headers} = Client) ->
+    %% POST /api/v3/query_sql with empty body.
+    %% InfluxDB v3 authenticates first, then validates the request:
+    %%   - 401: token is invalid
+    %%   - 400/422: token is valid but request is malformed (no query body)
+    %%   - 200: token is valid (unlikely for empty body, but accept it)
+    Path = "/api/v3/query_sql",
+    try
+        Worker = pick_worker(Client, ignore),
+        case ehttpc:request(Worker, post, {Path, Headers, <<>>}) of
+            {ok, Code, _} when Code >= 200, Code < 300 ->
+                ok;
+            {ok, Code, _, _} when Code >= 200, Code < 300 ->
+                ok;
+            {ok, 400, _} ->
+                ok;
+            {ok, 400, _, _} ->
+                ok;
+            {ok, 422, _} ->
+                ok;
+            {ok, 422, _, _} ->
+                ok;
+            {ok, 401, _} ->
+                {error, not_authorized};
+            {ok, 401, _, _} ->
+                {error, not_authorized};
+            {ok, Code, _} ->
+                {error, {unexpected_status, Code}};
+            {ok, Code, _, Body} ->
+                {error, {unexpected_status, Code, Body}};
+            {error, Reason} ->
+                {error, Reason}
+        end
+    catch E:R:S ->
+        logger:error("[InfluxDB] check_auth v3 exception: ~0p ~0p ~0p", [E, R, S]),
+        {error, {E, R}}
+    end.
+
+check_auth_v1(#{auth_path := AuthPath, headers := Headers} = Client) ->
+    %% Send GET /query with credentials but without "q" parameter.
+    %% InfluxDB v1 authenticates the request first, then checks for "q":
+    %%   - 401: credentials are invalid
+    %%   - 400 (missing "q"): credentials are valid
+    %%   - 200: credentials are valid (auth disabled on server)
+    try
+        Worker = pick_worker(Client, ignore),
+        case ehttpc:request(Worker, get, {AuthPath, Headers}) of
+            {ok, 200, _} ->
+                ok;
+            {ok, 200, _, _} ->
+                ok;
+            {ok, 400, _, _} ->
+                %% "missing required parameter q" — auth passed
+                ok;
+            {ok, 400, _} ->
+                ok;
+            {ok, 401, _} ->
+                {error, not_authorized};
+            {ok, 401, _, _} ->
+                {error, not_authorized};
+            {ok, Code, _} ->
+                {error, {unexpected_status, Code}};
+            {ok, Code, _, Body} ->
+                {error, {unexpected_status, Code, Body}};
+            {error, Reason} ->
+                {error, Reason}
+        end
+    catch E:R:S ->
+        logger:error("[InfluxDB] check_auth v1 exception: ~0p ~0p ~0p", [E, R, S]),
+        {error, {E, R}}
+    end;
+check_auth_v1(_Client) ->
+    %% No auth_path available, skip auth check
+    ok.
+
 maybe_return_reason({ok, ReturnCode, _}, true) ->
     {false, ReturnCode};
 maybe_return_reason({ok, ReturnCode, _, Body}, true) ->

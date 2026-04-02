@@ -10,6 +10,7 @@ all() -> [ t_encode_line
          , t_write
          , t_is_alive
          , t_check_auth
+         , t_check_auth_no_show_databases
          ].
 
 init_per_suite(Config) ->
@@ -232,3 +233,41 @@ v3_token(UseTLS) ->
     {ok, Raw} = file:read_file(Path),
     #{<<"token">> := Token} = json:decode(Raw),
     Token.
+
+%% Verify that check_auth does NOT use "SHOW DATABASES" for health checks.
+%% This is critical because some security audit systems flag "SHOW DATABASES"
+%% as a penetration attack.
+t_check_auth_no_show_databases(_) ->
+    t_check_auth_no_show_databases_(v1),
+    t_check_auth_no_show_databases_(v2).
+
+t_check_auth_no_show_databases_(Version) ->
+    application:ensure_all_started(influxdb),
+    Host = os:getenv("INFLUX_TCP_HOST", "influxdb_tcp"),
+    Port = 8086,
+    Option = options(Host, Port, http, random, Version),
+    {ok, Client} = influxdb:start_client(Option),
+    try
+        %% Verify auth_path in the Client map does not contain "show databases"
+        case maps:find(auth_path, Client) of
+            {ok, undefined} ->
+                %% v2: auth_path should be undefined
+                ?assertEqual(v2, Version);
+            {ok, AuthPath} when is_list(AuthPath) ->
+                %% v1: auth_path must not contain "show" or "q=" query param
+                LowerPath = string:lowercase(AuthPath),
+                ?assertEqual(nomatch, string:find(LowerPath, "show"),
+                             "auth_path must not contain SHOW DATABASES"),
+                ?assertEqual(nomatch, string:find(LowerPath, "q="),
+                             "auth_path must not contain q= parameter"),
+                %% Should still be a /query path (for credential validation)
+                ?assertNotEqual(nomatch, string:find(LowerPath, "/query"));
+            error ->
+                %% auth_path key not present — acceptable
+                ok
+        end,
+        %% Verify check_auth still works correctly
+        ?assertEqual(ok, influxdb:check_auth(Client))
+    after
+        influxdb:stop_client(Client)
+    end.

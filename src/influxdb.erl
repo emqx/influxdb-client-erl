@@ -105,53 +105,12 @@ write(#{protocol := Protocol} = Client, Points) ->
     end.
 
 -spec check_auth(Client :: map()) -> ok | {error, not_authorized} | {error, term()}.
-check_auth(#{version := v3} = Client0) ->
-    #{protocol := Protocol, auth_path := AuthPath, opts := Opts} = Client0,
-    Client = Client0#{path := AuthPath},
-    Body = json:encode(#{
-         db => proplists:get_value(database, Opts),
-         q => <<"show tables">>
-     }),
-    Ret =
-        try
-            case Protocol of
-                http ->
-                    influxdb_http:write(Client, Body);
-                udp ->
-                    influxdb_udp:write(Client, Body)
-            end
-        catch E:R:S ->
-            logger:error("[InfluxDB] Check auth ~0p failed: ~0p ~0p ~p", [Body, E, R, S]),
-            {error, {E, R}}
-        end,
-    case Ret of
-        {_, {200, _, _}} -> ok;
-        {_, {404, _, _}} -> ok;
-        {_, {401, _}} -> {error, not_authorized};
-        {_, {401, _, _}} -> {error, not_authorized};
-        {error, Err} -> {error, Err};
-        Err -> {error, Err}
-    end;
-check_auth(#{protocol := Protocol, auth_path := AuthPath} = Client0) ->
-    FakePoint = #{fields => #{<<"check_auth">> => <<"">>}, measurement => <<"check_auth">>},
-    Client = Client0#{path := AuthPath},
-    Ret =
-        try
-            case Protocol of
-                http ->
-                    influxdb_http:write(Client, influxdb_line:encode(FakePoint));
-                udp ->
-                    influxdb_udp:write(Client, influxdb_line:encode(FakePoint))
-            end
-        catch E:R:S ->
-            logger:error("[InfluxDB] Check auth ~0p failed: ~0p ~0p ~p", [FakePoint, E, R, S]),
-            {error, {E, R}}
-        end,
-    case Ret of
-        {_, {200, _, _}} -> ok;
-        {_, {401, _, _}} -> {error, not_authorized};
-        {error, Err} -> {error, Err};
-        Err -> {error, Err}
+check_auth(#{protocol := Protocol} = Client) ->
+    case Protocol of
+        http ->
+            influxdb_http:check_auth(Client);
+        udp ->
+            ok
     end.
 
 -spec(write(Client, Key, Points) -> ok | {error, term()}
@@ -253,10 +212,19 @@ write_path(Version, Options) ->
     RawParams = [],
     path(BasePath, RawParams, Version, Options).
 
-auth_path(Version, Options) ->
-    BasePath = auth_path(Version),
-    RawParams = [{"q", "show databases"}],
-    path(BasePath, RawParams, Version, Options).
+auth_path(v1, Options) ->
+    BasePath = "/query",
+    %% No query parameter — we only need credential validation.
+    %% InfluxDB returns 401 for bad credentials, 400 for missing "q" param
+    %% (which means credentials are valid).
+    RawParams = [],
+    path(BasePath, RawParams, v1, Options);
+auth_path(v2, _Options) ->
+    %% v2/v3 check_auth uses dedicated endpoints in influxdb_http,
+    %% no auth_path needed.
+    undefined;
+auth_path(v3, _Options) ->
+    undefined.
 
 path(BasePath, RawParams, Version, Options) ->
     List0 = qs_list(Version),
@@ -306,9 +274,53 @@ header(v3, Options) ->
     Token = proplists:get_value(token, Options, <<"">>),
     [{<<"Authorization">>, <<"Bearer ", Token/binary>>} | header(v1, Options)].
 
-auth_path(v3) -> "/api/v3/query_sql";
-auth_path(_Version) -> "/query".
 
 str(A) when is_atom(A) -> atom_to_list(A);
 str(B) when is_binary(B) -> binary_to_list(B);
 str(L) when is_list(L) -> L.
+
+%%===================================================================
+%% eunit tests
+%%===================================================================
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+auth_path_v1_no_show_databases_test() ->
+    Options = [{database, "mydb"}, {username, "user"}, {password, "pass"}],
+    Path = auth_path(v1, Options),
+    %% auth_path must NOT contain "show databases" or any "q=" parameter
+    ?assertNotEqual(nomatch, string:find(Path, "/query")),
+    ?assertEqual(nomatch, string:find(Path, "show")),
+    ?assertEqual(nomatch, string:find(Path, "SHOW")),
+    ?assertEqual(nomatch, string:find(Path, "q=")),
+    %% but must contain credential params
+    ?assertNotEqual(nomatch, string:find(Path, "u=user")),
+    ?assertNotEqual(nomatch, string:find(Path, "p=pass")).
+
+auth_path_v2_undefined_test() ->
+    Options = [{token, <<"mytoken">>}, {org, "myorg"}, {bucket, "mybucket"}],
+    ?assertEqual(undefined, auth_path(v2, Options)).
+
+auth_path_v3_undefined_test() ->
+    Options = [{token, <<"mytoken">>}, {database, "mydb"}],
+    ?assertEqual(undefined, auth_path(v3, Options)).
+
+http_clients_options_v1_no_show_databases_test() ->
+    Options = [{version, v1}, {database, "mydb"}, {username, "user"}, {password, "pass"}],
+    #{auth_path := AuthPath} = http_clients_options(Options),
+    ?assertNotEqual(nomatch, string:find(AuthPath, "/query")),
+    ?assertEqual(nomatch, string:find(AuthPath, "show")),
+    ?assertEqual(nomatch, string:find(AuthPath, "q=")).
+
+http_clients_options_v2_auth_path_undefined_test() ->
+    Options = [{version, v2}, {token, <<"tok">>}, {org, "org"}, {bucket, "bkt"}],
+    #{auth_path := AuthPath} = http_clients_options(Options),
+    ?assertEqual(undefined, AuthPath).
+
+http_clients_options_v3_auth_path_undefined_test() ->
+    Options = [{version, v3}, {token, <<"tok">>}, {database, "mydb"}],
+    #{auth_path := AuthPath} = http_clients_options(Options),
+    ?assertEqual(undefined, AuthPath).
+
+-endif.

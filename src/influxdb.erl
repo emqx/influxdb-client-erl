@@ -333,11 +333,11 @@ v1_ping_auth_params_enabled_test() ->
     ?assertEqual(nomatch, string:find(PingParams, "precision=")).
 
 v2_ping_auth_params_ignored_test() ->
-    Options = [{version, v2}, {token, <<"tok">>}, {ping_with_auth, true}],
+    Options = [{version, v2}, {token, <<"tok">>}],
     ?assertEqual([], influxdb_http:ping_auth_params(Options)).
 
 v3_ping_auth_params_ignored_test() ->
-    Options = [{version, v3}, {token, <<"tok">>}, {database, "mydb"}, {ping_with_auth, true}],
+    Options = [{version, v3}, {token, <<"tok">>}, {database, "mydb"}],
     ?assertEqual([], influxdb_http:ping_auth_params(Options)).
 
 v1_is_alive_with_ping_auth_enabled_test() ->
@@ -415,7 +415,29 @@ v1_is_alive_rejects_bad_ping_auth_when_enabled_test() ->
         ok = influxdb:stop_client(Client)
     end.
 
-v2_is_alive_ignores_ping_with_auth_test() ->
+v2_is_alive_defaults_to_ping_without_auth_test() ->
+    application:ensure_all_started(influxdb),
+    ListenSocket = auth_header_ping_server_start(undefined),
+    {ok, {_Addr, Port}} = inet:sockname(ListenSocket),
+    Options =
+        [ {host, "127.0.0.1"}
+        , {port, Port}
+        , {protocol, http}
+        , {https_enabled, false}
+        , {pool, pool_name("v2_ping_no_header")}
+        , {pool_size, 1}
+        , {pool_type, random}
+        , {token, <<"tok">>}
+        , {version, v2}
+        ],
+    {ok, Client} = influxdb:start_client(Options),
+    try
+        ?assertEqual(true, influxdb:is_alive(Client))
+    after
+        ok = influxdb:stop_client(Client)
+    end.
+
+v2_is_alive_with_ping_auth_enabled_test() ->
     application:ensure_all_started(influxdb),
     ListenSocket = auth_header_ping_server_start(<<"Authorization: Token tok\r\n">>),
     {ok, {_Addr, Port}} = inet:sockname(ListenSocket),
@@ -438,7 +460,30 @@ v2_is_alive_ignores_ping_with_auth_test() ->
         ok = influxdb:stop_client(Client)
     end.
 
-v3_is_alive_ignores_ping_with_auth_test() ->
+v3_is_alive_defaults_to_ping_without_auth_test() ->
+    application:ensure_all_started(influxdb),
+    ListenSocket = auth_header_ping_server_start(undefined),
+    {ok, {_Addr, Port}} = inet:sockname(ListenSocket),
+    Options =
+        [ {host, "127.0.0.1"}
+        , {port, Port}
+        , {protocol, http}
+        , {https_enabled, false}
+        , {pool, pool_name("v3_ping_no_header")}
+        , {pool_size, 1}
+        , {pool_type, random}
+        , {token, <<"tok">>}
+        , {database, <<"mydb">>}
+        , {version, v3}
+        ],
+    {ok, Client} = influxdb:start_client(Options),
+    try
+        ?assertEqual(true, influxdb:is_alive(Client))
+    after
+        ok = influxdb:stop_client(Client)
+    end.
+
+v3_is_alive_with_ping_auth_enabled_test() ->
     application:ensure_all_started(influxdb),
     ListenSocket = auth_header_ping_server_start(<<"Authorization: Bearer tok\r\n">>),
     {ok, {_Addr, Port}} = inet:sockname(ListenSocket),
@@ -498,13 +543,19 @@ auth_header_ping_server_serve(ListenSocket, ExpectedHeader) ->
     {ok, Socket} = gen_tcp:accept(ListenSocket),
     {ok, Request} = gen_tcp:recv(Socket, 0, 5000),
     StatusLine =
-        case contains(Request, <<"GET /ping HTTP/">>) andalso contains_ci(Request, ExpectedHeader) of
+        case auth_header_ping_request_result(Request, ExpectedHeader) of
             true -> <<"HTTP/1.1 204 No Content\r\n">>;
             false -> <<"HTTP/1.1 401 Unauthorized\r\n">>
         end,
     ok = gen_tcp:send(Socket, [StatusLine, <<"Content-Length: 0\r\nConnection: close\r\n\r\n">>]),
     ok = gen_tcp:close(Socket),
     ok = gen_tcp:close(ListenSocket).
+
+auth_header_ping_request_result(Request, undefined) ->
+    contains(Request, <<"GET /ping HTTP/">>) andalso
+        not contains_ci(Request, <<"authorization: ">>);
+auth_header_ping_request_result(Request, ExpectedHeader) ->
+    contains(Request, <<"GET /ping HTTP/">>) andalso contains_ci(Request, ExpectedHeader).
 
 ping_auth_request_result(Request, undefined, undefined) ->
     contains(Request, <<"GET /ping HTTP/">>);

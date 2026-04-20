@@ -31,8 +31,9 @@ is_alive(Client = #{version := Version}, ReturnReason) ->
 is_alive(Client, ReturnReason) ->
     is_alive(v1, Client, ReturnReason).
 
-is_alive(V, Client = #{headers := Headers}, ReturnReason) when V == v2; V == v3 ->
+is_alive(V, Client, ReturnReason) when V == v2; V == v3 ->
     Path = "/ping",
+    Headers = ping_headers(Client),
     try
         Worker = pick_worker(Client, ignore),
         case ehttpc:request(Worker, get, {Path, Headers}) of
@@ -250,7 +251,7 @@ v1_ping_path(_Client) ->
     "/ping".
 
 ping_auth_params(Options) ->
-    case ping_with_auth_enabled(Options) of
+    case ping_query_auth_enabled(Options) of
         true ->
             uri_string:compose_query(
                 lists:reverse(
@@ -263,9 +264,22 @@ ping_auth_params(Options) ->
             []
     end.
 
-ping_with_auth_enabled(Options) ->
+ping_query_auth_enabled(Options) ->
     proplists:get_value(version, Options, v1) =:= v1 andalso
-        proplists:get_value(ping_with_auth, Options, false) =:= true.
+        ping_with_auth_enabled(Options).
+
+ping_with_auth_enabled(Options) ->
+    proplists:get_value(ping_with_auth, Options, false) =:= true.
+
+ping_headers(#{headers := Headers, opts := Options}) ->
+    case ping_with_auth_enabled(Options) of
+        true ->
+            Headers;
+        false ->
+            lists:keydelete(<<"Authorization">>, 1, Headers)
+    end;
+ping_headers(#{headers := Headers}) ->
+    Headers.
 
 add_query_param(Key, Name, Acc, Options) ->
     case proplists:get_value(Key, Options) of

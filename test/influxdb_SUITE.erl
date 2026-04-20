@@ -208,6 +208,7 @@ options(Host, Port, WriteProtocol, PoolType, Version) when Version =:= v3 ->
     , {pool_size, PoolSize}
     , {pool_type, PoolType}
     , {token, Token}
+    , {ping_with_auth, true}
     , {database, Database}
     , {precision, Precision}
     , {version, Version}

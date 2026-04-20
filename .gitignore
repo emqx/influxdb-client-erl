@@ -20,4 +20,3 @@ _build/
 rebar.lock
 rebar3.crashdump
 data/
-.omx/

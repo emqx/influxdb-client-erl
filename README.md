@@ -31,6 +31,7 @@ Option = [ {host, "127.0.0.1"}
 
 * The client supports the `v1` and `v2` API versions of InfluxDB. Using `v1` by default, the version automatically chooses the write endpoint path(for `v1`, it's `/write`).
 * The optional `path` option specifies the write endpoint path manually. The other TSDB supporting the InfluxDB writing protocol may have different write endpoint paths. You can configure it with this option.
+* For `v1`, when `username` and `password` are provided, the client sends them through the `Authorization: Basic ...` header instead of putting them in the URL query string. This also applies to `ping_with_auth`.
 
 
 ``` erlang

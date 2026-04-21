@@ -288,18 +288,21 @@ maybe_add_basic_auth_header(Headers, Options) ->
 
 basic_auth_value(Options) ->
     case {proplists:get_value(username, Options), proplists:get_value(password, Options)} of
-        {undefined, _} ->
-            undefined;
-        {_, undefined} ->
+        {undefined, undefined} ->
             undefined;
         {Username, Password} ->
-            Encoded = base64:encode(iolist_to_binary([to_binary(Username), <<":">>, to_binary(Password)])),
+            Encoded = base64:encode(
+                iolist_to_binary([to_binary_or_empty(Username), <<":">>, to_binary_or_empty(Password)])
+            ),
             <<"Basic ", Encoded/binary>>
     end.
 
 to_binary(Value) when is_binary(Value) -> Value;
 to_binary(Value) when is_list(Value) -> unicode:characters_to_binary(Value);
 to_binary(Value) when is_atom(Value) -> atom_to_binary(Value, utf8).
+
+to_binary_or_empty(undefined) -> <<>>;
+to_binary_or_empty(Value) -> to_binary(Value).
 
 %%===================================================================
 %% eunit tests
@@ -347,6 +350,20 @@ v1_header_uses_basic_auth_test() ->
     Headers = header(v1, Options),
     ?assert(lists:member(
         {<<"Authorization">>, <<"Basic dXNlcjpwYXNz">>},
+        Headers
+    )).
+
+v1_header_supports_username_without_password_test() ->
+    Headers = header(v1, [{username, <<"user">>}]),
+    ?assert(lists:member(
+        {<<"Authorization">>, <<"Basic dXNlcjo=">>},
+        Headers
+    )).
+
+v1_header_supports_password_without_username_test() ->
+    Headers = header(v1, [{password, <<"pass">>}]),
+    ?assert(lists:member(
+        {<<"Authorization">>, <<"Basic OnBhc3M=">>},
         Headers
     )).
 

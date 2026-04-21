@@ -20,11 +20,12 @@
 -type udp_opt() :: {host, inet:ip_address() | inet:hostname()}
                  | {port, inet:port_number()}.
 -type http_opts() :: [http_opt()].
+-type option_text() :: string() | binary() | atom().
 -type http_opt() :: {host, inet:hostname()}
                   | {port, inet:port_number()}
-                  | {database, string()}
-                  | {username, string()}
-                  | {password, string()}
+                  | {database, option_text()}
+                  | {username, option_text()}
+                  | {password, option_text()}
                   | {ping_with_auth, boolean()}
                   | {precision, precision()}
                   | {https_enabled, boolean()}

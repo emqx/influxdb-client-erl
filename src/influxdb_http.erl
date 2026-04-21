@@ -58,6 +58,10 @@ is_alive(v1, Client, ReturnReason) ->
     try
         Worker = pick_worker(Client, ignore),
         case ehttpc:request(Worker, get, {Path, Headers}) of
+            {ok, 200, _} ->
+                true;
+            {ok, 200, _, _} ->
+                true;
             {ok, 204, _} ->
                 true;
             {ok, 204, _, _} ->

@@ -365,6 +365,31 @@ v1_is_alive_with_ping_auth_enabled_test() ->
         ok = influxdb:stop_client(Client)
         end.
 
+v1_is_alive_accepts_verbose_ping_auth_response_test() ->
+    application:ensure_all_started(influxdb),
+    ListenSocket = ping_auth_server_start(<<"user">>, <<"pass">>, <<"HTTP/1.1 200 OK\r\n">>),
+    {ok, {_Addr, Port}} = inet:sockname(ListenSocket),
+    Options =
+        [ {host, "127.0.0.1"}
+        , {port, Port}
+        , {protocol, http}
+        , {https_enabled, false}
+        , {pool, pool_name("ping_auth_verbose")}
+        , {pool_size, 1}
+        , {pool_type, random}
+        , {username, <<"user">>}
+        , {password, <<"pass">>}
+        , {database, <<"mydb">>}
+        , {ping_with_auth, true}
+        , {version, v1}
+        ],
+    {ok, Client} = influxdb:start_client(Options),
+    try
+        ?assertEqual(true, influxdb:is_alive(Client))
+    after
+        ok = influxdb:stop_client(Client)
+    end.
+
 v1_is_alive_defaults_to_legacy_ping_test() ->
     application:ensure_all_started(influxdb),
     ListenSocket = ping_auth_server_start(undefined, undefined),
@@ -518,8 +543,11 @@ http_clients_options_v3_auth_path_undefined_test() ->
     ?assertEqual(undefined, AuthPath).
 
 ping_auth_server_start(ExpectedUser, ExpectedPassword) ->
+    ping_auth_server_start(ExpectedUser, ExpectedPassword, <<"HTTP/1.1 204 No Content\r\n">>).
+
+ping_auth_server_start(ExpectedUser, ExpectedPassword, SuccessStatusLine) ->
     {ok, ListenSocket} = gen_tcp:listen(0, [binary, {active, false}, {reuseaddr, true}]),
-    spawn_link(fun() -> ping_auth_server_serve(ListenSocket, ExpectedUser, ExpectedPassword) end),
+    spawn_link(fun() -> ping_auth_server_serve(ListenSocket, ExpectedUser, ExpectedPassword, SuccessStatusLine) end),
     ListenSocket.
 
 auth_header_ping_server_start(ExpectedHeader) ->
@@ -527,12 +555,12 @@ auth_header_ping_server_start(ExpectedHeader) ->
     spawn_link(fun() -> auth_header_ping_server_serve(ListenSocket, ExpectedHeader) end),
     ListenSocket.
 
-ping_auth_server_serve(ListenSocket, ExpectedUser, ExpectedPassword) ->
+ping_auth_server_serve(ListenSocket, ExpectedUser, ExpectedPassword, SuccessStatusLine) ->
     {ok, Socket} = gen_tcp:accept(ListenSocket),
     {ok, Request} = gen_tcp:recv(Socket, 0, 5000),
     StatusLine =
         case ping_auth_request_result(Request, ExpectedUser, ExpectedPassword) of
-            true -> <<"HTTP/1.1 204 No Content\r\n">>;
+            true -> SuccessStatusLine;
             false -> <<"HTTP/1.1 401 Unauthorized\r\n">>
         end,
     ok = gen_tcp:send(Socket, [StatusLine, <<"Content-Length: 0\r\nConnection: close\r\n\r\n">>]),

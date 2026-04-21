@@ -270,10 +270,10 @@ header(v1, Options) ->
     );
 header(v2, Options) ->
     Token = proplists:get_value(token, Options, <<"">>),
-    [{<<"Authorization">>, <<"Token ", Token/binary>>} | header(v1, Options)];
+    [{<<"Authorization">>, <<"Token ", Token/binary>>}, {<<"Content-type">>, <<"text/plain; charset=utf-8">>}];
 header(v3, Options) ->
     Token = proplists:get_value(token, Options, <<"">>),
-    [{<<"Authorization">>, <<"Bearer ", Token/binary>>} | header(v1, Options)].
+    [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, {<<"Content-type">>, <<"text/plain; charset=utf-8">>}].
 
 
 str(A) when is_atom(A) -> atom_to_list(A);
@@ -357,6 +357,18 @@ v1_header_uses_basic_auth_test() ->
         {<<"Authorization">>, <<"Basic dXNlcjpwYXNz">>},
         Headers
     )).
+
+v2_header_does_not_include_basic_auth_test() ->
+    Options = [{token, <<"tok">>}, {username, <<"user">>}, {password, <<"pass">>}],
+    Headers = header(v2, Options),
+    AuthorizationHeaders = [Value || {Key, Value} <- Headers, Key =:= <<"Authorization">>],
+    ?assertEqual([<<"Token tok">>], AuthorizationHeaders).
+
+v3_header_does_not_include_basic_auth_test() ->
+    Options = [{token, <<"tok">>}, {username, <<"user">>}, {password, <<"pass">>}],
+    Headers = header(v3, Options),
+    AuthorizationHeaders = [Value || {Key, Value} <- Headers, Key =:= <<"Authorization">>],
+    ?assertEqual([<<"Bearer tok">>], AuthorizationHeaders).
 
 v2_ping_auth_params_ignored_test() ->
     Options = [{version, v2}, {token, <<"tok">>}],

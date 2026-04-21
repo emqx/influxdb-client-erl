@@ -24,6 +24,7 @@
 
 -ifdef(TEST).
 -export([ping_auth_params/1]).
+-export([ping_headers/1]).
 -endif.
 
 is_alive(Client = #{version := Version}, ReturnReason) ->
@@ -274,10 +275,26 @@ ping_headers(#{headers := Headers, opts := Options}) ->
         true ->
             Headers;
         false ->
-            lists:keydelete(<<"Authorization">>, 1, Headers)
+            [Header || {Key, _} = Header <- Headers, Key =/= <<"Authorization">>]
     end;
 ping_headers(#{headers := Headers}) ->
     Headers.
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+ping_headers_removes_all_authorization_headers_when_auth_disabled_test() ->
+    Headers =
+        [ {<<"Authorization">>, <<"Token tok">>}
+        , {<<"Authorization">>, <<"Basic dXNlcjpwYXNz">>}
+        , {<<"Content-type">>, <<"text/plain; charset=utf-8">>}
+        ],
+    Client = #{headers => Headers, opts => [{ping_with_auth, false}]},
+    ?assertEqual(
+        [{<<"Content-type">>, <<"text/plain; charset=utf-8">>}],
+        ping_headers(Client)
+    ).
+-endif.
 
 pick_worker(#{pool := Pool, pool_type := hash}, Key) ->
     ehttpc_pool:pick_worker(Pool, Key);

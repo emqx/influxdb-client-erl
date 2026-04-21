@@ -22,10 +22,6 @@
         , write_async/3
         , write_async/4]).
 
--ifdef(TEST).
--export([ping_headers/1]).
--endif.
-
 is_alive(Client = #{version := Version}, ReturnReason) ->
     is_alive(Version, Client, ReturnReason);
 is_alive(Client, ReturnReason) ->

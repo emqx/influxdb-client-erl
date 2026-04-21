@@ -22,10 +22,6 @@
         , write_async/3
         , write_async/4]).
 
--ifdef(TEST).
--export([ping_auth_params/1]).
--endif.
-
 is_alive(Client = #{version := Version}, ReturnReason) ->
     is_alive(Version, Client, ReturnReason);
 is_alive(Client, ReturnReason) ->
@@ -54,7 +50,7 @@ is_alive(V, Client, ReturnReason) when V == v2; V == v3 ->
     end;
 is_alive(v1, Client, ReturnReason) ->
     Path = v1_ping_path(Client),
-    Headers = [{<<"verbose">>, <<"true">>}],
+    Headers = ping_headers(Client),
     try
         Worker = pick_worker(Client, ignore),
         case ehttpc:request(Worker, get, {Path, Headers}) of
@@ -77,7 +73,7 @@ is_alive(v1, Client, ReturnReason) ->
 %% @doc Check authentication against the InfluxDB server.
 %% For v2, uses GET /api/v2/buckets with the Authorization header.
 %% For v3, uses POST /api/v3/query_sql with the Authorization header (empty body).
-%% For v1, uses GET /query (without "q" param) with credentials in query string;
+%% For v1, uses GET /query (without "q" param) with Basic authentication header;
 %%   returns ok on 200 or 400 (missing "q" means auth passed), error on 401.
 -spec check_auth(Client :: map()) -> ok | {error, not_authorized} | {error, term()}.
 check_auth(#{version := v2} = Client) ->
@@ -245,32 +241,8 @@ do_aysnc_write(Worker, Request, ReplayFunAndArgs) ->
     ok = ehttpc:request_async(Worker, post, Request, 5000, ReplayFunAndArgs),
     {ok, Worker}.
 
-v1_ping_path(#{opts := Options}) ->
-    Params = ping_auth_params(Options),
-    case Params of
-        [] -> "/ping";
-        _ -> "/ping?" ++ Params
-    end;
 v1_ping_path(_Client) ->
     "/ping".
-
-ping_auth_params(Options) ->
-    case ping_query_auth_enabled(Options) of
-        true ->
-            uri_string:compose_query(
-                lists:reverse(
-                    add_query_param(password, "p",
-                        add_query_param(username, "u", [{"verbose", "true"}], Options),
-                    Options)
-                )
-            );
-        false ->
-            []
-    end.
-
-ping_query_auth_enabled(Options) ->
-    proplists:get_value(version, Options, v1) =:= v1 andalso
-        ping_with_auth_enabled(Options).
 
 ping_with_auth_enabled(Options) ->
     proplists:get_value(ping_with_auth, Options, false) =:= true.
@@ -280,18 +252,26 @@ ping_headers(#{headers := Headers, opts := Options}) ->
         true ->
             Headers;
         false ->
-            lists:keydelete(<<"Authorization">>, 1, Headers)
+            [Header || {Key, _} = Header <- Headers, Key =/= <<"Authorization">>]
     end;
 ping_headers(#{headers := Headers}) ->
     Headers.
 
-add_query_param(Key, Name, Acc, Options) ->
-    case proplists:get_value(Key, Options) of
-        undefined -> Acc;
-        Val when is_binary(Val) -> [{Name, binary_to_list(Val)} | Acc];
-        Val when is_list(Val) -> [{Name, Val} | Acc];
-        Val when is_atom(Val) -> [{Name, atom_to_list(Val)} | Acc]
-    end.
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+ping_headers_removes_all_authorization_headers_when_auth_disabled_test() ->
+    Headers =
+        [ {<<"Authorization">>, <<"Token tok">>}
+        , {<<"Authorization">>, <<"Basic dXNlcjpwYXNz">>}
+        , {<<"Content-type">>, <<"text/plain; charset=utf-8">>}
+        ],
+    Client = #{headers => Headers, opts => [{ping_with_auth, false}]},
+    ?assertEqual(
+        [{<<"Content-type">>, <<"text/plain; charset=utf-8">>}],
+        ping_headers(Client)
+    ).
+-endif.
 
 pick_worker(#{pool := Pool, pool_type := hash}, Key) ->
     ehttpc_pool:pick_worker(Pool, Key);

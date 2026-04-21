@@ -246,8 +246,6 @@ path(BasePath, RawParams, Version, Options) ->
 qs_list(v1) ->
     [
         {"db", database},
-        {"u", username},
-        {"p", password},
         {"precision", precision}
     ];
 qs_list(v2) ->
@@ -265,19 +263,46 @@ write_path(v1) -> "/write";
 write_path(v2) -> "/api/v2/write";
 write_path(v3) -> "/api/v3/write_lp".
 
-header(v1, _) ->
-    [{<<"Content-type">>, <<"text/plain; charset=utf-8">>}];
+header(v1, Options) ->
+    maybe_add_basic_auth_header(
+        [{<<"Content-type">>, <<"text/plain; charset=utf-8">>}],
+        Options
+    );
 header(v2, Options) ->
     Token = proplists:get_value(token, Options, <<"">>),
-    [{<<"Authorization">>, <<"Token ", Token/binary>>} | header(v1, Options)];
+    [{<<"Authorization">>, <<"Token ", Token/binary>>}, {<<"Content-type">>, <<"text/plain; charset=utf-8">>}];
 header(v3, Options) ->
     Token = proplists:get_value(token, Options, <<"">>),
-    [{<<"Authorization">>, <<"Bearer ", Token/binary>>} | header(v1, Options)].
+    [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, {<<"Content-type">>, <<"text/plain; charset=utf-8">>}].
 
 
 str(A) when is_atom(A) -> atom_to_list(A);
 str(B) when is_binary(B) -> binary_to_list(B);
 str(L) when is_list(L) -> L.
+
+maybe_add_basic_auth_header(Headers, Options) ->
+    case basic_auth_value(Options) of
+        undefined -> Headers;
+        Authorization -> [{<<"Authorization">>, Authorization} | Headers]
+    end.
+
+basic_auth_value(Options) ->
+    case {proplists:get_value(username, Options), proplists:get_value(password, Options)} of
+        {undefined, undefined} ->
+            undefined;
+        {Username, Password} ->
+            Encoded = base64:encode(
+                iolist_to_binary([to_binary_or_empty(Username), <<":">>, to_binary_or_empty(Password)])
+            ),
+            <<"Basic ", Encoded/binary>>
+    end.
+
+to_binary(Value) when is_binary(Value) -> Value;
+to_binary(Value) when is_list(Value) -> unicode:characters_to_binary(Value);
+to_binary(Value) when is_atom(Value) -> atom_to_binary(Value, utf8).
+
+to_binary_or_empty(undefined) -> <<>>;
+to_binary_or_empty(Value) -> to_binary(Value).
 
 %%===================================================================
 %% eunit tests
@@ -294,9 +319,9 @@ auth_path_v1_no_show_databases_test() ->
     ?assertEqual(nomatch, string:find(Path, "show")),
     ?assertEqual(nomatch, string:find(Path, "SHOW")),
     ?assertEqual(nomatch, string:find(Path, "q=")),
-    %% but must contain credential params
-    ?assertNotEqual(nomatch, string:find(Path, "u=user")),
-    ?assertNotEqual(nomatch, string:find(Path, "p=pass")).
+    %% and must not leak credentials into the query string
+    ?assertEqual(nomatch, string:find(Path, "u=user")),
+    ?assertEqual(nomatch, string:find(Path, "p=pass")).
 
 auth_path_v2_undefined_test() ->
     Options = [{token, <<"mytoken">>}, {org, "myorg"}, {bucket, "mybucket"}],
@@ -313,36 +338,54 @@ http_clients_options_v1_no_show_databases_test() ->
     ?assertEqual(nomatch, string:find(AuthPath, "show")),
     ?assertEqual(nomatch, string:find(AuthPath, "q=")).
 
-v1_ping_auth_params_default_disabled_test() ->
+v1_paths_do_not_include_ping_auth_params_test() ->
     Options = [{version, v1}, {database, "mydb"}, {username, "user"}, {password, "pass"}],
-    PingParams = influxdb_http:ping_auth_params(Options),
     #{path := WritePath, auth_path := AuthPath} = http_clients_options(Options),
-    ?assertEqual([], PingParams),
     ?assertNotEqual(nomatch, string:find(WritePath, "/write")),
     ?assertNotEqual(nomatch, string:find(WritePath, "db=mydb")),
-    ?assertNotEqual(nomatch, string:find(AuthPath, "/query")).
+    ?assertEqual(nomatch, string:find(WritePath, "u=")),
+    ?assertEqual(nomatch, string:find(WritePath, "p=")),
+    ?assertNotEqual(nomatch, string:find(AuthPath, "/query")),
+    ?assertEqual(nomatch, string:find(AuthPath, "u=")),
+    ?assertEqual(nomatch, string:find(AuthPath, "p=")).
 
-v1_ping_auth_params_enabled_test() ->
-    Options =
-        [{version, v1}, {database, "mydb"}, {username, "user"}, {password, "pass"}, {ping_with_auth, true}],
-    PingParams = influxdb_http:ping_auth_params(Options),
-    ?assertNotEqual(nomatch, string:find(PingParams, "verbose=true")),
-    ?assertNotEqual(nomatch, string:find(PingParams, "u=user")),
-    ?assertNotEqual(nomatch, string:find(PingParams, "p=pass")),
-    ?assertEqual(nomatch, string:find(PingParams, "db=mydb")),
-    ?assertEqual(nomatch, string:find(PingParams, "precision=")).
+v1_header_uses_basic_auth_test() ->
+    Options = [{username, <<"user">>}, {password, <<"pass">>}],
+    Headers = header(v1, Options),
+    ?assert(lists:member(
+        {<<"Authorization">>, <<"Basic dXNlcjpwYXNz">>},
+        Headers
+    )).
 
-v2_ping_auth_params_ignored_test() ->
-    Options = [{version, v2}, {token, <<"tok">>}],
-    ?assertEqual([], influxdb_http:ping_auth_params(Options)).
+v1_header_supports_username_without_password_test() ->
+    Headers = header(v1, [{username, <<"user">>}]),
+    ?assert(lists:member(
+        {<<"Authorization">>, <<"Basic dXNlcjo=">>},
+        Headers
+    )).
 
-v3_ping_auth_params_ignored_test() ->
-    Options = [{version, v3}, {token, <<"tok">>}, {database, "mydb"}],
-    ?assertEqual([], influxdb_http:ping_auth_params(Options)).
+v1_header_supports_password_without_username_test() ->
+    Headers = header(v1, [{password, <<"pass">>}]),
+    ?assert(lists:member(
+        {<<"Authorization">>, <<"Basic OnBhc3M=">>},
+        Headers
+    )).
+
+v2_header_does_not_include_basic_auth_test() ->
+    Options = [{token, <<"tok">>}, {username, <<"user">>}, {password, <<"pass">>}],
+    Headers = header(v2, Options),
+    AuthorizationHeaders = [Value || {Key, Value} <- Headers, Key =:= <<"Authorization">>],
+    ?assertEqual([<<"Token tok">>], AuthorizationHeaders).
+
+v3_header_does_not_include_basic_auth_test() ->
+    Options = [{token, <<"tok">>}, {username, <<"user">>}, {password, <<"pass">>}],
+    Headers = header(v3, Options),
+    AuthorizationHeaders = [Value || {Key, Value} <- Headers, Key =:= <<"Authorization">>],
+    ?assertEqual([<<"Bearer tok">>], AuthorizationHeaders).
 
 v1_is_alive_with_ping_auth_enabled_test() ->
     application:ensure_all_started(influxdb),
-    ListenSocket = ping_auth_server_start(<<"user">>, <<"pass">>),
+    ListenSocket = ping_auth_server_start(<<"Authorization: Basic dXNlcjpwYXNz\r\n">>),
     {ok, {_Addr, Port}} = inet:sockname(ListenSocket),
     Options =
         [ {host, "127.0.0.1"}
@@ -367,7 +410,7 @@ v1_is_alive_with_ping_auth_enabled_test() ->
 
 v1_is_alive_accepts_verbose_ping_auth_response_test() ->
     application:ensure_all_started(influxdb),
-    ListenSocket = ping_auth_server_start(<<"user">>, <<"pass">>, <<"HTTP/1.1 200 OK\r\n">>),
+    ListenSocket = ping_auth_server_start(<<"Authorization: Basic dXNlcjpwYXNz\r\n">>, <<"HTTP/1.1 200 OK\r\n">>),
     {ok, {_Addr, Port}} = inet:sockname(ListenSocket),
     Options =
         [ {host, "127.0.0.1"}
@@ -392,7 +435,7 @@ v1_is_alive_accepts_verbose_ping_auth_response_test() ->
 
 v1_is_alive_defaults_to_legacy_ping_test() ->
     application:ensure_all_started(influxdb),
-    ListenSocket = ping_auth_server_start(undefined, undefined),
+    ListenSocket = auth_header_ping_server_start(undefined),
     {ok, {_Addr, Port}} = inet:sockname(ListenSocket),
     Options =
         [ {host, "127.0.0.1"}
@@ -416,7 +459,7 @@ v1_is_alive_defaults_to_legacy_ping_test() ->
 
 v1_is_alive_rejects_bad_ping_auth_when_enabled_test() ->
     application:ensure_all_started(influxdb),
-    ListenSocket = ping_auth_server_start(<<"user">>, <<"pass">>),
+    ListenSocket = ping_auth_server_start(<<"Authorization: Basic dXNlcjpwYXNz\r\n">>),
     {ok, {_Addr, Port}} = inet:sockname(ListenSocket),
     Options =
         [ {host, "127.0.0.1"}
@@ -542,12 +585,12 @@ http_clients_options_v3_auth_path_undefined_test() ->
     #{auth_path := AuthPath} = http_clients_options(Options),
     ?assertEqual(undefined, AuthPath).
 
-ping_auth_server_start(ExpectedUser, ExpectedPassword) ->
-    ping_auth_server_start(ExpectedUser, ExpectedPassword, <<"HTTP/1.1 204 No Content\r\n">>).
+ping_auth_server_start(ExpectedAuthorization) ->
+    ping_auth_server_start(ExpectedAuthorization, <<"HTTP/1.1 204 No Content\r\n">>).
 
-ping_auth_server_start(ExpectedUser, ExpectedPassword, SuccessStatusLine) ->
+ping_auth_server_start(ExpectedAuthorization, SuccessStatusLine) ->
     {ok, ListenSocket} = gen_tcp:listen(0, [binary, {active, false}, {reuseaddr, true}]),
-    spawn_link(fun() -> ping_auth_server_serve(ListenSocket, ExpectedUser, ExpectedPassword, SuccessStatusLine) end),
+    spawn_link(fun() -> ping_auth_server_serve(ListenSocket, ExpectedAuthorization, SuccessStatusLine) end),
     ListenSocket.
 
 auth_header_ping_server_start(ExpectedHeader) ->
@@ -555,15 +598,15 @@ auth_header_ping_server_start(ExpectedHeader) ->
     spawn_link(fun() -> auth_header_ping_server_serve(ListenSocket, ExpectedHeader) end),
     ListenSocket.
 
-ping_auth_server_serve(ListenSocket, ExpectedUser, ExpectedPassword, SuccessStatusLine) ->
+ping_auth_server_serve(ListenSocket, ExpectedAuthorization, SuccessStatusLine) ->
     {ok, Socket} = gen_tcp:accept(ListenSocket),
     {ok, Request} = gen_tcp:recv(Socket, 0, 5000),
     StatusLine =
-        case ping_auth_request_result(Request, ExpectedUser, ExpectedPassword) of
+        case ping_auth_request_result(Request, ExpectedAuthorization) of
             true -> SuccessStatusLine;
             false -> <<"HTTP/1.1 401 Unauthorized\r\n">>
         end,
-    ok = gen_tcp:send(Socket, [StatusLine, <<"Content-Length: 0\r\nConnection: close\r\n\r\n">>]),
+    _ = gen_tcp:send(Socket, [StatusLine, <<"Content-Length: 0\r\nConnection: close\r\n\r\n">>]),
     ok = gen_tcp:close(Socket),
     ok = gen_tcp:close(ListenSocket).
 
@@ -575,7 +618,7 @@ auth_header_ping_server_serve(ListenSocket, ExpectedHeader) ->
             true -> <<"HTTP/1.1 204 No Content\r\n">>;
             false -> <<"HTTP/1.1 401 Unauthorized\r\n">>
         end,
-    ok = gen_tcp:send(Socket, [StatusLine, <<"Content-Length: 0\r\nConnection: close\r\n\r\n">>]),
+    _ = gen_tcp:send(Socket, [StatusLine, <<"Content-Length: 0\r\nConnection: close\r\n\r\n">>]),
     ok = gen_tcp:close(Socket),
     ok = gen_tcp:close(ListenSocket).
 
@@ -585,13 +628,14 @@ auth_header_ping_request_result(Request, undefined) ->
 auth_header_ping_request_result(Request, ExpectedHeader) ->
     contains(Request, <<"GET /ping HTTP/">>) andalso contains_ci(Request, ExpectedHeader).
 
-ping_auth_request_result(Request, undefined, undefined) ->
+ping_auth_request_result(Request, undefined) ->
     contains(Request, <<"GET /ping HTTP/">>);
-ping_auth_request_result(Request, ExpectedUser, ExpectedPassword) ->
-    contains(Request, <<"GET /ping?">>) andalso
-        contains(Request, <<"verbose=true">>) andalso
-        contains(Request, <<"u=", ExpectedUser/binary>>) andalso
-        contains(Request, <<"p=", ExpectedPassword/binary>>).
+ping_auth_request_result(Request, ExpectedAuthorization) ->
+    contains(Request, <<"GET /ping HTTP/">>) andalso
+        contains_ci(Request, ExpectedAuthorization) andalso
+        not contains(Request, <<"GET /ping?">>) andalso
+        not contains_ci(Request, <<"u=">>) andalso
+        not contains_ci(Request, <<"p=">>).
 
 contains(Binary, Pattern) ->
     binary:match(Binary, Pattern) =/= nomatch.

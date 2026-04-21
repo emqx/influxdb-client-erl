@@ -512,7 +512,7 @@ v1_is_alive_rejects_bad_ping_auth_when_enabled_test() ->
         ok = influxdb:stop_client(Client)
     end.
 
-v1_is_alive_with_ping_query_string_auth_enabled_test() ->
+v1_is_alive_with_ping_query_string_transport_enabled_test() ->
     application:ensure_all_started(influxdb),
     ListenSocket = ping_query_auth_server_start(<<"user">>, <<"pass">>),
     {ok, {_Addr, Port}} = inet:sockname(ListenSocket),
@@ -711,7 +711,6 @@ ping_auth_request_result(Request, ExpectedAuthorization) ->
 
 ping_query_auth_request_result(Request, ExpectedUser, ExpectedPassword) ->
     contains(Request, <<"GET /ping?">>) andalso
-        contains(Request, <<"verbose=true">>) andalso
         contains(Request, <<"u=", ExpectedUser/binary>>) andalso
         contains(Request, <<"p=", ExpectedPassword/binary>>) andalso
         not contains_ci(Request, <<"authorization: ">>).

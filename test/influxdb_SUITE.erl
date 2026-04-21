@@ -9,7 +9,7 @@
 all() -> [ t_encode_line
          , t_write
          , t_is_alive
-         , t_is_alive_v1_query_string_auth
+         , t_is_alive_v1_query_string_transport
          , t_check_auth
          , t_check_auth_v1_query_string_transport
          , t_check_auth_no_show_databases
@@ -99,7 +99,7 @@ t_is_alive(_) ->
     t_is_alive_(v2),
     t_is_alive_(v3).
 
-t_is_alive_v1_query_string_auth(_) ->
+t_is_alive_v1_query_string_transport(_) ->
     application:ensure_all_started(influxdb),
     Host = host(v1),
     Port = influxdb_port(v1),

@@ -255,7 +255,7 @@ v1_ping_auth_query(Options) ->
     uri_string:compose_query(
         lists:reverse(
             add_query_param(password, "p",
-                add_query_param(username, "u", [{"verbose", "true"}], Options),
+                add_query_param(username, "u", [], Options),
             Options)
         )
     ).

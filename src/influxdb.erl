@@ -343,7 +343,11 @@ v1_paths_do_not_include_ping_auth_params_test() ->
     #{path := WritePath, auth_path := AuthPath} = http_clients_options(Options),
     ?assertNotEqual(nomatch, string:find(WritePath, "/write")),
     ?assertNotEqual(nomatch, string:find(WritePath, "db=mydb")),
-    ?assertNotEqual(nomatch, string:find(AuthPath, "/query")).
+    ?assertEqual(nomatch, string:find(WritePath, "u=")),
+    ?assertEqual(nomatch, string:find(WritePath, "p=")),
+    ?assertNotEqual(nomatch, string:find(AuthPath, "/query")),
+    ?assertEqual(nomatch, string:find(AuthPath, "u=")),
+    ?assertEqual(nomatch, string:find(AuthPath, "p=")).
 
 v1_header_uses_basic_auth_test() ->
     Options = [{username, <<"user">>}, {password, <<"pass">>}],

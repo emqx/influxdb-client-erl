@@ -9,7 +9,9 @@
 all() -> [ t_encode_line
          , t_write
          , t_is_alive
+         , t_is_alive_v1_query_string_auth
          , t_check_auth
+         , t_check_auth_v1_query_string_transport
          , t_check_auth_no_show_databases
          ].
 
@@ -97,6 +99,30 @@ t_is_alive(_) ->
     t_is_alive_(v2),
     t_is_alive_(v3).
 
+t_is_alive_v1_query_string_auth(_) ->
+    application:ensure_all_started(influxdb),
+    Host = host(v1),
+    Port = influxdb_port(v1),
+
+    Option0 = enable_ping_auth(options_with_v1_auth_transport(options(Host, Port, http, random, v1), query_string)),
+    {ok, Client0} = influxdb:start_client(Option0),
+    timer:sleep(500),
+    ?assertEqual(true, influxdb:is_alive(Client0, true), #{client => Client0}),
+    ?assertEqual(true, influxdb:is_alive(Client0), #{client => Client0}),
+    ok = influxdb:stop_client(Client0),
+
+    Option1 = enable_ping_auth(
+        options_with_v1_auth_transport(
+            options_wrong_credentials(Host, Port, http, random, v1),
+            query_string
+        )
+    ),
+    {ok, Client1} = influxdb:start_client(Option1),
+    timer:sleep(500),
+    ?assertMatch({false, _}, influxdb:is_alive(Client1, true), #{client => Client1}),
+    ?assertEqual(false, influxdb:is_alive(Client1), #{client => Client1}),
+    ok = influxdb:stop_client(Client1).
+
 t_is_alive_(Version) ->
     application:ensure_all_started(influxdb),
     Host = host(Version),
@@ -129,6 +155,29 @@ t_check_auth(_) ->
     t_check_auth_(v1),
     t_check_auth_(v2),
     t_check_auth_(v3).
+
+t_check_auth_v1_query_string_transport(_) ->
+    application:ensure_all_started(influxdb),
+    Host = host(v1),
+    Port = influxdb_port(v1),
+    Option0 = options_with_v1_auth_transport(options(Host, Port, http, random, v1), query_string),
+    {ok, Client0} = influxdb:start_client(Option0),
+    timer:sleep(500),
+    #{auth_path := AuthPath0, headers := Headers0} = Client0,
+    ?assertNotEqual(nomatch, string:find(AuthPath0, "u=root")),
+    ?assertNotEqual(nomatch, string:find(AuthPath0, "p=emqx%40123")),
+    ?assertEqual(false, lists:keymember(<<"Authorization">>, 1, Headers0)),
+    ?assertEqual(ok, influxdb:check_auth(Client0)),
+    ok = influxdb:stop_client(Client0),
+
+    Option1 = options_with_v1_auth_transport(
+        options_wrong_credentials(Host, Port, http, random, v1),
+        query_string
+    ),
+    {ok, Client1} = influxdb:start_client(Option1),
+    timer:sleep(500),
+    ?assertEqual({error, not_authorized}, influxdb:check_auth(Client1)),
+    ok = influxdb:stop_client(Client1).
 
 t_check_auth_(Version) ->
     application:ensure_all_started(influxdb),
@@ -220,6 +269,12 @@ options_wrong_credentials(Host, Port, WriteProtocol, PoolType, Version) when Ver
 options_wrong_credentials(Host, Port, WriteProtocol, PoolType, Version) when Version =:= v2; Version =:= v3 ->
     Options = options(Host, Port, WriteProtocol, PoolType, Version),
     lists:keyreplace(token, 1, Options, {token, <<"wrong_token">>}).
+
+options_with_v1_auth_transport(Options, Transport) ->
+    [{v1_auth_transport, Transport} | proplists:delete(v1_auth_transport, Options)].
+
+enable_ping_auth(Options) ->
+    [{ping_with_auth, true} | proplists:delete(ping_with_auth, Options)].
 
 shared_secret_path() ->
     os:getenv("CI_SHARED_SECRET_PATH", "/var/lib/secret").

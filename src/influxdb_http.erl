@@ -22,13 +22,18 @@
         , write_async/3
         , write_async/4]).
 
+-ifdef(TEST).
+-export([ping_auth_params/1]).
+-endif.
+
 is_alive(Client = #{version := Version}, ReturnReason) ->
     is_alive(Version, Client, ReturnReason);
 is_alive(Client, ReturnReason) ->
     is_alive(v1, Client, ReturnReason).
 
-is_alive(V, Client = #{headers := Headers}, ReturnReason) when V == v2; V == v3 ->
+is_alive(V, Client, ReturnReason) when V == v2; V == v3 ->
     Path = "/ping",
+    Headers = ping_headers(Client),
     try
         Worker = pick_worker(Client, ignore),
         case ehttpc:request(Worker, get, {Path, Headers}) of
@@ -48,7 +53,7 @@ is_alive(V, Client = #{headers := Headers}, ReturnReason) when V == v2; V == v3 
                              ReturnReason)
     end;
 is_alive(v1, Client, ReturnReason) ->
-    Path = "/ping",
+    Path = v1_ping_path(Client),
     Headers = [{<<"verbose">>, <<"true">>}],
     try
         Worker = pick_worker(Client, ignore),
@@ -235,6 +240,54 @@ do_write(Worker, {_Path, _Headers, _Data} = Request) ->
 do_aysnc_write(Worker, Request, ReplayFunAndArgs) ->
     ok = ehttpc:request_async(Worker, post, Request, 5000, ReplayFunAndArgs),
     {ok, Worker}.
+
+v1_ping_path(#{opts := Options}) ->
+    Params = ping_auth_params(Options),
+    case Params of
+        [] -> "/ping";
+        _ -> "/ping?" ++ Params
+    end;
+v1_ping_path(_Client) ->
+    "/ping".
+
+ping_auth_params(Options) ->
+    case ping_query_auth_enabled(Options) of
+        true ->
+            uri_string:compose_query(
+                lists:reverse(
+                    add_query_param(password, "p",
+                        add_query_param(username, "u", [{"verbose", "true"}], Options),
+                    Options)
+                )
+            );
+        false ->
+            []
+    end.
+
+ping_query_auth_enabled(Options) ->
+    proplists:get_value(version, Options, v1) =:= v1 andalso
+        ping_with_auth_enabled(Options).
+
+ping_with_auth_enabled(Options) ->
+    proplists:get_value(ping_with_auth, Options, false) =:= true.
+
+ping_headers(#{headers := Headers, opts := Options}) ->
+    case ping_with_auth_enabled(Options) of
+        true ->
+            Headers;
+        false ->
+            lists:keydelete(<<"Authorization">>, 1, Headers)
+    end;
+ping_headers(#{headers := Headers}) ->
+    Headers.
+
+add_query_param(Key, Name, Acc, Options) ->
+    case proplists:get_value(Key, Options) of
+        undefined -> Acc;
+        Val when is_binary(Val) -> [{Name, binary_to_list(Val)} | Acc];
+        Val when is_list(Val) -> [{Name, Val} | Acc];
+        Val when is_atom(Val) -> [{Name, atom_to_list(Val)} | Acc]
+    end.
 
 pick_worker(#{pool := Pool, pool_type := hash}, Key) ->
     ehttpc_pool:pick_worker(Pool, Key);

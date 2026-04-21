@@ -313,6 +313,200 @@ http_clients_options_v1_no_show_databases_test() ->
     ?assertEqual(nomatch, string:find(AuthPath, "show")),
     ?assertEqual(nomatch, string:find(AuthPath, "q=")).
 
+v1_ping_auth_params_default_disabled_test() ->
+    Options = [{version, v1}, {database, "mydb"}, {username, "user"}, {password, "pass"}],
+    PingParams = influxdb_http:ping_auth_params(Options),
+    #{path := WritePath, auth_path := AuthPath} = http_clients_options(Options),
+    ?assertEqual([], PingParams),
+    ?assertNotEqual(nomatch, string:find(WritePath, "/write")),
+    ?assertNotEqual(nomatch, string:find(WritePath, "db=mydb")),
+    ?assertNotEqual(nomatch, string:find(AuthPath, "/query")).
+
+v1_ping_auth_params_enabled_test() ->
+    Options =
+        [{version, v1}, {database, "mydb"}, {username, "user"}, {password, "pass"}, {ping_with_auth, true}],
+    PingParams = influxdb_http:ping_auth_params(Options),
+    ?assertNotEqual(nomatch, string:find(PingParams, "verbose=true")),
+    ?assertNotEqual(nomatch, string:find(PingParams, "u=user")),
+    ?assertNotEqual(nomatch, string:find(PingParams, "p=pass")),
+    ?assertEqual(nomatch, string:find(PingParams, "db=mydb")),
+    ?assertEqual(nomatch, string:find(PingParams, "precision=")).
+
+v2_ping_auth_params_ignored_test() ->
+    Options = [{version, v2}, {token, <<"tok">>}],
+    ?assertEqual([], influxdb_http:ping_auth_params(Options)).
+
+v3_ping_auth_params_ignored_test() ->
+    Options = [{version, v3}, {token, <<"tok">>}, {database, "mydb"}],
+    ?assertEqual([], influxdb_http:ping_auth_params(Options)).
+
+v1_is_alive_with_ping_auth_enabled_test() ->
+    application:ensure_all_started(influxdb),
+    ListenSocket = ping_auth_server_start(<<"user">>, <<"pass">>),
+    {ok, {_Addr, Port}} = inet:sockname(ListenSocket),
+    Options =
+        [ {host, "127.0.0.1"}
+        , {port, Port}
+        , {protocol, http}
+        , {https_enabled, false}
+        , {pool, pool_name("ping_auth_good")}
+        , {pool_size, 1}
+        , {pool_type, random}
+        , {username, <<"user">>}
+        , {password, <<"pass">>}
+        , {database, <<"mydb">>}
+        , {ping_with_auth, true}
+        , {version, v1}
+        ],
+    {ok, Client} = influxdb:start_client(Options),
+    try
+        ?assertEqual(true, influxdb:is_alive(Client))
+    after
+        ok = influxdb:stop_client(Client)
+        end.
+
+v1_is_alive_defaults_to_legacy_ping_test() ->
+    application:ensure_all_started(influxdb),
+    ListenSocket = ping_auth_server_start(undefined, undefined),
+    {ok, {_Addr, Port}} = inet:sockname(ListenSocket),
+    Options =
+        [ {host, "127.0.0.1"}
+        , {port, Port}
+        , {protocol, http}
+        , {https_enabled, false}
+        , {pool, pool_name("ping_legacy")}
+        , {pool_size, 1}
+        , {pool_type, random}
+        , {username, <<"user">>}
+        , {password, <<"pass">>}
+        , {database, <<"mydb">>}
+        , {version, v1}
+        ],
+    {ok, Client} = influxdb:start_client(Options),
+    try
+        ?assertEqual(true, influxdb:is_alive(Client))
+    after
+        ok = influxdb:stop_client(Client)
+    end.
+
+v1_is_alive_rejects_bad_ping_auth_when_enabled_test() ->
+    application:ensure_all_started(influxdb),
+    ListenSocket = ping_auth_server_start(<<"user">>, <<"pass">>),
+    {ok, {_Addr, Port}} = inet:sockname(ListenSocket),
+    Options =
+        [ {host, "127.0.0.1"}
+        , {port, Port}
+        , {protocol, http}
+        , {https_enabled, false}
+        , {pool, pool_name("ping_auth_bad")}
+        , {pool_size, 1}
+        , {pool_type, random}
+        , {username, <<"user">>}
+        , {password, <<"wrong">>}
+        , {database, <<"mydb">>}
+        , {ping_with_auth, true}
+        , {version, v1}
+        ],
+    {ok, Client} = influxdb:start_client(Options),
+    try
+        ?assertMatch({false, _}, influxdb:is_alive(Client, true)),
+        ?assertEqual(false, influxdb:is_alive(Client))
+    after
+        ok = influxdb:stop_client(Client)
+    end.
+
+v2_is_alive_defaults_to_ping_without_auth_test() ->
+    application:ensure_all_started(influxdb),
+    ListenSocket = auth_header_ping_server_start(undefined),
+    {ok, {_Addr, Port}} = inet:sockname(ListenSocket),
+    Options =
+        [ {host, "127.0.0.1"}
+        , {port, Port}
+        , {protocol, http}
+        , {https_enabled, false}
+        , {pool, pool_name("v2_ping_no_header")}
+        , {pool_size, 1}
+        , {pool_type, random}
+        , {token, <<"tok">>}
+        , {version, v2}
+        ],
+    {ok, Client} = influxdb:start_client(Options),
+    try
+        ?assertEqual(true, influxdb:is_alive(Client))
+    after
+        ok = influxdb:stop_client(Client)
+    end.
+
+v2_is_alive_with_ping_auth_enabled_test() ->
+    application:ensure_all_started(influxdb),
+    ListenSocket = auth_header_ping_server_start(<<"Authorization: Token tok\r\n">>),
+    {ok, {_Addr, Port}} = inet:sockname(ListenSocket),
+    Options =
+        [ {host, "127.0.0.1"}
+        , {port, Port}
+        , {protocol, http}
+        , {https_enabled, false}
+        , {pool, pool_name("v2_ping_header")}
+        , {pool_size, 1}
+        , {pool_type, random}
+        , {token, <<"tok">>}
+        , {ping_with_auth, true}
+        , {version, v2}
+        ],
+    {ok, Client} = influxdb:start_client(Options),
+    try
+        ?assertEqual(true, influxdb:is_alive(Client))
+    after
+        ok = influxdb:stop_client(Client)
+    end.
+
+v3_is_alive_defaults_to_ping_without_auth_test() ->
+    application:ensure_all_started(influxdb),
+    ListenSocket = auth_header_ping_server_start(undefined),
+    {ok, {_Addr, Port}} = inet:sockname(ListenSocket),
+    Options =
+        [ {host, "127.0.0.1"}
+        , {port, Port}
+        , {protocol, http}
+        , {https_enabled, false}
+        , {pool, pool_name("v3_ping_no_header")}
+        , {pool_size, 1}
+        , {pool_type, random}
+        , {token, <<"tok">>}
+        , {database, <<"mydb">>}
+        , {version, v3}
+        ],
+    {ok, Client} = influxdb:start_client(Options),
+    try
+        ?assertEqual(true, influxdb:is_alive(Client))
+    after
+        ok = influxdb:stop_client(Client)
+    end.
+
+v3_is_alive_with_ping_auth_enabled_test() ->
+    application:ensure_all_started(influxdb),
+    ListenSocket = auth_header_ping_server_start(<<"Authorization: Bearer tok\r\n">>),
+    {ok, {_Addr, Port}} = inet:sockname(ListenSocket),
+    Options =
+        [ {host, "127.0.0.1"}
+        , {port, Port}
+        , {protocol, http}
+        , {https_enabled, false}
+        , {pool, pool_name("v3_ping_header")}
+        , {pool_size, 1}
+        , {pool_type, random}
+        , {token, <<"tok">>}
+        , {database, <<"mydb">>}
+        , {ping_with_auth, true}
+        , {version, v3}
+        ],
+    {ok, Client} = influxdb:start_client(Options),
+    try
+        ?assertEqual(true, influxdb:is_alive(Client))
+    after
+        ok = influxdb:stop_client(Client)
+    end.
+
 http_clients_options_v2_auth_path_undefined_test() ->
     Options = [{version, v2}, {token, <<"tok">>}, {org, "org"}, {bucket, "bkt"}],
     #{auth_path := AuthPath} = http_clients_options(Options),
@@ -322,5 +516,64 @@ http_clients_options_v3_auth_path_undefined_test() ->
     Options = [{version, v3}, {token, <<"tok">>}, {database, "mydb"}],
     #{auth_path := AuthPath} = http_clients_options(Options),
     ?assertEqual(undefined, AuthPath).
+
+ping_auth_server_start(ExpectedUser, ExpectedPassword) ->
+    {ok, ListenSocket} = gen_tcp:listen(0, [binary, {active, false}, {reuseaddr, true}]),
+    spawn_link(fun() -> ping_auth_server_serve(ListenSocket, ExpectedUser, ExpectedPassword) end),
+    ListenSocket.
+
+auth_header_ping_server_start(ExpectedHeader) ->
+    {ok, ListenSocket} = gen_tcp:listen(0, [binary, {active, false}, {reuseaddr, true}]),
+    spawn_link(fun() -> auth_header_ping_server_serve(ListenSocket, ExpectedHeader) end),
+    ListenSocket.
+
+ping_auth_server_serve(ListenSocket, ExpectedUser, ExpectedPassword) ->
+    {ok, Socket} = gen_tcp:accept(ListenSocket),
+    {ok, Request} = gen_tcp:recv(Socket, 0, 5000),
+    StatusLine =
+        case ping_auth_request_result(Request, ExpectedUser, ExpectedPassword) of
+            true -> <<"HTTP/1.1 204 No Content\r\n">>;
+            false -> <<"HTTP/1.1 401 Unauthorized\r\n">>
+        end,
+    ok = gen_tcp:send(Socket, [StatusLine, <<"Content-Length: 0\r\nConnection: close\r\n\r\n">>]),
+    ok = gen_tcp:close(Socket),
+    ok = gen_tcp:close(ListenSocket).
+
+auth_header_ping_server_serve(ListenSocket, ExpectedHeader) ->
+    {ok, Socket} = gen_tcp:accept(ListenSocket),
+    {ok, Request} = gen_tcp:recv(Socket, 0, 5000),
+    StatusLine =
+        case auth_header_ping_request_result(Request, ExpectedHeader) of
+            true -> <<"HTTP/1.1 204 No Content\r\n">>;
+            false -> <<"HTTP/1.1 401 Unauthorized\r\n">>
+        end,
+    ok = gen_tcp:send(Socket, [StatusLine, <<"Content-Length: 0\r\nConnection: close\r\n\r\n">>]),
+    ok = gen_tcp:close(Socket),
+    ok = gen_tcp:close(ListenSocket).
+
+auth_header_ping_request_result(Request, undefined) ->
+    contains(Request, <<"GET /ping HTTP/">>) andalso
+        not contains_ci(Request, <<"authorization: ">>);
+auth_header_ping_request_result(Request, ExpectedHeader) ->
+    contains(Request, <<"GET /ping HTTP/">>) andalso contains_ci(Request, ExpectedHeader).
+
+ping_auth_request_result(Request, undefined, undefined) ->
+    contains(Request, <<"GET /ping HTTP/">>);
+ping_auth_request_result(Request, ExpectedUser, ExpectedPassword) ->
+    contains(Request, <<"GET /ping?">>) andalso
+        contains(Request, <<"verbose=true">>) andalso
+        contains(Request, <<"u=", ExpectedUser/binary>>) andalso
+        contains(Request, <<"p=", ExpectedPassword/binary>>).
+
+contains(Binary, Pattern) ->
+    binary:match(Binary, Pattern) =/= nomatch.
+
+contains_ci(Binary, Pattern) ->
+    LowerBinary = string:lowercase(binary_to_list(Binary)),
+    LowerPattern = string:lowercase(binary_to_list(Pattern)),
+    string:find(LowerBinary, LowerPattern) =/= nomatch.
+
+pool_name(Prefix) ->
+    list_to_binary(Prefix ++ "_" ++ integer_to_list(erlang:unique_integer([positive]))).
 
 -endif.

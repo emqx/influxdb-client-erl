@@ -25,6 +25,7 @@
                   | {database, string()}
                   | {username, string()}
                   | {password, string()}
+                  | {ping_with_auth, boolean()}
                   | {precision, precision()}
                   | {https_enabled, boolean()}
                   | {ssl, ssloptions()}.

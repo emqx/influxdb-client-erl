@@ -23,7 +23,6 @@
         , write_async/4]).
 
 -ifdef(TEST).
--export([ping_auth_params/1]).
 -export([ping_headers/1]).
 -endif.
 
@@ -246,26 +245,8 @@ do_aysnc_write(Worker, Request, ReplayFunAndArgs) ->
     ok = ehttpc:request_async(Worker, post, Request, 5000, ReplayFunAndArgs),
     {ok, Worker}.
 
-v1_ping_path(#{opts := Options}) ->
-    Params = ping_auth_params(Options),
-    case Params of
-        [] -> "/ping";
-        _ -> "/ping?" ++ Params
-    end;
 v1_ping_path(_Client) ->
     "/ping".
-
-ping_auth_params(Options) ->
-    case ping_query_auth_enabled(Options) of
-        true ->
-            [];
-        false ->
-            []
-    end.
-
-ping_query_auth_enabled(Options) ->
-    proplists:get_value(version, Options, v1) =:= v1 andalso
-        ping_with_auth_enabled(Options).
 
 ping_with_auth_enabled(Options) ->
     proplists:get_value(ping_with_auth, Options, false) =:= true.

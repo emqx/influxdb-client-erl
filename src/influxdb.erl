@@ -335,20 +335,12 @@ http_clients_options_v1_no_show_databases_test() ->
     ?assertEqual(nomatch, string:find(AuthPath, "show")),
     ?assertEqual(nomatch, string:find(AuthPath, "q=")).
 
-v1_ping_auth_params_default_disabled_test() ->
+v1_paths_do_not_include_ping_auth_params_test() ->
     Options = [{version, v1}, {database, "mydb"}, {username, "user"}, {password, "pass"}],
-    PingParams = influxdb_http:ping_auth_params(Options),
     #{path := WritePath, auth_path := AuthPath} = http_clients_options(Options),
-    ?assertEqual([], PingParams),
     ?assertNotEqual(nomatch, string:find(WritePath, "/write")),
     ?assertNotEqual(nomatch, string:find(WritePath, "db=mydb")),
     ?assertNotEqual(nomatch, string:find(AuthPath, "/query")).
-
-v1_ping_auth_params_enabled_test() ->
-    Options =
-        [{version, v1}, {database, "mydb"}, {username, "user"}, {password, "pass"}, {ping_with_auth, true}],
-    PingParams = influxdb_http:ping_auth_params(Options),
-    ?assertEqual([], PingParams).
 
 v1_header_uses_basic_auth_test() ->
     Options = [{username, <<"user">>}, {password, <<"pass">>}],
@@ -369,14 +361,6 @@ v3_header_does_not_include_basic_auth_test() ->
     Headers = header(v3, Options),
     AuthorizationHeaders = [Value || {Key, Value} <- Headers, Key =:= <<"Authorization">>],
     ?assertEqual([<<"Bearer tok">>], AuthorizationHeaders).
-
-v2_ping_auth_params_ignored_test() ->
-    Options = [{version, v2}, {token, <<"tok">>}],
-    ?assertEqual([], influxdb_http:ping_auth_params(Options)).
-
-v3_ping_auth_params_ignored_test() ->
-    Options = [{version, v3}, {token, <<"tok">>}, {database, "mydb"}],
-    ?assertEqual([], influxdb_http:ping_auth_params(Options)).
 
 v1_is_alive_with_ping_auth_enabled_test() ->
     application:ensure_all_started(influxdb),

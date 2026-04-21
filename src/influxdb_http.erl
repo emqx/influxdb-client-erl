@@ -244,7 +244,13 @@ do_aysnc_write(Worker, Request, ReplayFunAndArgs) ->
 v1_ping_path(#{opts := Options}) ->
     case v1_query_string_ping_auth_enabled(Options) of
         true ->
-            "/ping?" ++ v1_ping_auth_query(Options);
+            Query = v1_ping_auth_query(Options),
+            case Query of
+                [] ->
+                    "/ping";
+                _ ->
+                    "/ping?" ++ Query
+            end;
         false ->
             "/ping"
     end;
@@ -300,6 +306,15 @@ ping_headers_removes_all_authorization_headers_when_auth_disabled_test() ->
         [{<<"Content-type">>, <<"text/plain; charset=utf-8">>}],
         ping_headers(Client)
     ).
+
+v1_ping_path_does_not_append_empty_query_string_test() ->
+    Client =
+        #{opts =>
+            [ {version, v1}
+            , {v1_auth_transport, query_string}
+            , {ping_with_auth, true}
+            ]},
+    ?assertEqual("/ping", v1_ping_path(Client)).
 -endif.
 
 pick_worker(#{pool := Pool, pool_type := hash}, Key) ->

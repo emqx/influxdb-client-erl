@@ -73,7 +73,7 @@ is_alive(v1, Client, ReturnReason) ->
 %% @doc Check authentication against the InfluxDB server.
 %% For v2, uses GET /api/v2/buckets with the Authorization header.
 %% For v3, uses POST /api/v3/query_sql with the Authorization header (empty body).
-%% For v1, uses GET /query (without "q" param) with Basic authentication header;
+%% For v1, uses GET /query (without "q" param) with configured credential transport;
 %%   returns ok on 200 or 400 (missing "q" means auth passed), error on 401.
 -spec check_auth(Client :: map()) -> ok | {error, not_authorized} | {error, term()}.
 check_auth(#{version := v2} = Client) ->
@@ -241,8 +241,35 @@ do_aysnc_write(Worker, Request, ReplayFunAndArgs) ->
     ok = ehttpc:request_async(Worker, post, Request, 5000, ReplayFunAndArgs),
     {ok, Worker}.
 
+v1_ping_path(#{opts := Options}) ->
+    case v1_query_string_ping_auth_enabled(Options) of
+        true ->
+            Query = v1_ping_auth_query(Options),
+            case Query of
+                [] ->
+                    "/ping";
+                _ ->
+                    "/ping?" ++ Query
+            end;
+        false ->
+            "/ping"
+    end;
 v1_ping_path(_Client) ->
     "/ping".
+
+v1_ping_auth_query(Options) ->
+    uri_string:compose_query(
+        lists:reverse(
+            add_query_param(password, "p",
+                add_query_param(username, "u", [], Options),
+            Options)
+        )
+    ).
+
+v1_query_string_ping_auth_enabled(Options) ->
+    proplists:get_value(version, Options, v1) =:= v1 andalso
+        proplists:get_value(v1_auth_transport, Options, header) =:= query_string andalso
+        ping_with_auth_enabled(Options).
 
 ping_with_auth_enabled(Options) ->
     proplists:get_value(ping_with_auth, Options, false) =:= true.
@@ -256,6 +283,14 @@ ping_headers(#{headers := Headers, opts := Options}) ->
     end;
 ping_headers(#{headers := Headers}) ->
     Headers.
+
+add_query_param(Key, Name, Acc, Options) ->
+    case proplists:get_value(Key, Options) of
+        undefined -> Acc;
+        Val when is_binary(Val) -> [{Name, binary_to_list(Val)} | Acc];
+        Val when is_list(Val) -> [{Name, Val} | Acc];
+        Val when is_atom(Val) -> [{Name, atom_to_list(Val)} | Acc]
+    end.
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -271,6 +306,15 @@ ping_headers_removes_all_authorization_headers_when_auth_disabled_test() ->
         [{<<"Content-type">>, <<"text/plain; charset=utf-8">>}],
         ping_headers(Client)
     ).
+
+v1_ping_path_does_not_append_empty_query_string_test() ->
+    Client =
+        #{opts =>
+            [ {version, v1}
+            , {v1_auth_transport, query_string}
+            , {ping_with_auth, true}
+            ]},
+    ?assertEqual("/ping", v1_ping_path(Client)).
 -endif.
 
 pick_worker(#{pool := Pool, pool_type := hash}, Key) ->

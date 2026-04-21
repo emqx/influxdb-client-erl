@@ -227,7 +227,7 @@ auth_path(v3, _Options) ->
     undefined.
 
 path(BasePath, RawParams, Version, Options) ->
-    List0 = qs_list(Version),
+    List0 = qs_list(Version, Options),
     FoldlFun =
         fun({K1, K2}, Acc) ->
             case proplists:get_value(K2, Options) of
@@ -243,18 +243,25 @@ path(BasePath, RawParams, Version, Options) ->
             BasePath ++ "?" ++ uri_string:compose_query(List)
     end.
 
-qs_list(v1) ->
-    [
-        {"db", database},
-        {"precision", precision}
-    ];
-qs_list(v2) ->
+qs_list(v1, Options) ->
+    BaseParams =
+        [
+            {"db", database},
+            {"precision", precision}
+        ],
+    case v1_auth_transport(Options) of
+        query_string ->
+            BaseParams ++ [{"u", username}, {"p", password}];
+        header ->
+            BaseParams
+    end;
+qs_list(v2, _Options) ->
     [
         {"org", org},
         {"bucket", bucket},
         {"precision", precision}
     ];
-qs_list(v3) ->
+qs_list(v3, _Options) ->
     [
         {"db", database}
     ].
@@ -264,10 +271,11 @@ write_path(v2) -> "/api/v2/write";
 write_path(v3) -> "/api/v3/write_lp".
 
 header(v1, Options) ->
-    maybe_add_basic_auth_header(
-        [{<<"Content-type">>, <<"text/plain; charset=utf-8">>}],
-        Options
-    );
+    Headers = [{<<"Content-type">>, <<"text/plain; charset=utf-8">>}],
+    case v1_auth_transport(Options) of
+        header -> maybe_add_basic_auth_header(Headers, Options);
+        query_string -> Headers
+    end;
 header(v2, Options) ->
     Token = proplists:get_value(token, Options, <<"">>),
     [{<<"Authorization">>, <<"Token ", Token/binary>>}, {<<"Content-type">>, <<"text/plain; charset=utf-8">>}];
@@ -303,6 +311,9 @@ to_binary(Value) when is_atom(Value) -> atom_to_binary(Value, utf8).
 
 to_binary_or_empty(undefined) -> <<>>;
 to_binary_or_empty(Value) -> to_binary(Value).
+
+v1_auth_transport(Options) ->
+    proplists:get_value(v1_auth_transport, Options, header).
 
 %%===================================================================
 %% eunit tests
@@ -348,6 +359,24 @@ v1_paths_do_not_include_ping_auth_params_test() ->
     ?assertNotEqual(nomatch, string:find(AuthPath, "/query")),
     ?assertEqual(nomatch, string:find(AuthPath, "u=")),
     ?assertEqual(nomatch, string:find(AuthPath, "p=")).
+
+v1_query_string_auth_transport_uses_url_credentials_test() ->
+    Options =
+        [ {version, v1}
+        , {database, "mydb"}
+        , {username, "user"}
+        , {password, "pass"}
+        , {v1_auth_transport, query_string}
+        ],
+    #{path := WritePath, auth_path := AuthPath, headers := Headers} = http_clients_options(Options),
+    ?assertNotEqual(nomatch, string:find(WritePath, "/write")),
+    ?assertNotEqual(nomatch, string:find(WritePath, "db=mydb")),
+    ?assertNotEqual(nomatch, string:find(WritePath, "u=user")),
+    ?assertNotEqual(nomatch, string:find(WritePath, "p=pass")),
+    ?assertNotEqual(nomatch, string:find(AuthPath, "/query")),
+    ?assertNotEqual(nomatch, string:find(AuthPath, "u=user")),
+    ?assertNotEqual(nomatch, string:find(AuthPath, "p=pass")),
+    ?assertNot(lists:keymember(<<"Authorization">>, 1, Headers)).
 
 v1_header_uses_basic_auth_test() ->
     Options = [{username, <<"user">>}, {password, <<"pass">>}],
@@ -483,6 +512,32 @@ v1_is_alive_rejects_bad_ping_auth_when_enabled_test() ->
         ok = influxdb:stop_client(Client)
     end.
 
+v1_is_alive_with_ping_query_string_transport_enabled_test() ->
+    application:ensure_all_started(influxdb),
+    ListenSocket = ping_query_auth_server_start(<<"user">>, <<"pass">>),
+    {ok, {_Addr, Port}} = inet:sockname(ListenSocket),
+    Options =
+        [ {host, "127.0.0.1"}
+        , {port, Port}
+        , {protocol, http}
+        , {https_enabled, false}
+        , {pool, pool_name("ping_query_auth")}
+        , {pool_size, 1}
+        , {pool_type, random}
+        , {username, <<"user">>}
+        , {password, <<"pass">>}
+        , {database, <<"mydb">>}
+        , {ping_with_auth, true}
+        , {v1_auth_transport, query_string}
+        , {version, v1}
+        ],
+    {ok, Client} = influxdb:start_client(Options),
+    try
+        ?assertEqual(true, influxdb:is_alive(Client))
+    after
+        ok = influxdb:stop_client(Client)
+    end.
+
 v2_is_alive_defaults_to_ping_without_auth_test() ->
     application:ensure_all_started(influxdb),
     ListenSocket = auth_header_ping_server_start(undefined),
@@ -598,6 +653,11 @@ auth_header_ping_server_start(ExpectedHeader) ->
     spawn_link(fun() -> auth_header_ping_server_serve(ListenSocket, ExpectedHeader) end),
     ListenSocket.
 
+ping_query_auth_server_start(ExpectedUser, ExpectedPassword) ->
+    {ok, ListenSocket} = gen_tcp:listen(0, [binary, {active, false}, {reuseaddr, true}]),
+    spawn_link(fun() -> ping_query_auth_server_serve(ListenSocket, ExpectedUser, ExpectedPassword) end),
+    ListenSocket.
+
 ping_auth_server_serve(ListenSocket, ExpectedAuthorization, SuccessStatusLine) ->
     {ok, Socket} = gen_tcp:accept(ListenSocket),
     {ok, Request} = gen_tcp:recv(Socket, 0, 5000),
@@ -622,6 +682,18 @@ auth_header_ping_server_serve(ListenSocket, ExpectedHeader) ->
     ok = gen_tcp:close(Socket),
     ok = gen_tcp:close(ListenSocket).
 
+ping_query_auth_server_serve(ListenSocket, ExpectedUser, ExpectedPassword) ->
+    {ok, Socket} = gen_tcp:accept(ListenSocket),
+    {ok, Request} = gen_tcp:recv(Socket, 0, 5000),
+    StatusLine =
+        case ping_query_auth_request_result(Request, ExpectedUser, ExpectedPassword) of
+            true -> <<"HTTP/1.1 204 No Content\r\n">>;
+            false -> <<"HTTP/1.1 401 Unauthorized\r\n">>
+        end,
+    _ = gen_tcp:send(Socket, [StatusLine, <<"Content-Length: 0\r\nConnection: close\r\n\r\n">>]),
+    ok = gen_tcp:close(Socket),
+    ok = gen_tcp:close(ListenSocket).
+
 auth_header_ping_request_result(Request, undefined) ->
     contains(Request, <<"GET /ping HTTP/">>) andalso
         not contains_ci(Request, <<"authorization: ">>);
@@ -636,6 +708,12 @@ ping_auth_request_result(Request, ExpectedAuthorization) ->
         not contains(Request, <<"GET /ping?">>) andalso
         not contains_ci(Request, <<"u=">>) andalso
         not contains_ci(Request, <<"p=">>).
+
+ping_query_auth_request_result(Request, ExpectedUser, ExpectedPassword) ->
+    contains(Request, <<"GET /ping?">>) andalso
+        contains(Request, <<"u=", ExpectedUser/binary>>) andalso
+        contains(Request, <<"p=", ExpectedPassword/binary>>) andalso
+        not contains_ci(Request, <<"authorization: ">>).
 
 contains(Binary, Pattern) ->
     binary:match(Binary, Pattern) =/= nomatch.

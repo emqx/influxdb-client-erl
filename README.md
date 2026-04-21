@@ -31,7 +31,9 @@ Option = [ {host, "127.0.0.1"}
 
 * The client supports the `v1` and `v2` API versions of InfluxDB. Using `v1` by default, the version automatically chooses the write endpoint path(for `v1`, it's `/write`).
 * The optional `path` option specifies the write endpoint path manually. The other TSDB supporting the InfluxDB writing protocol may have different write endpoint paths. You can configure it with this option.
-* For `v1`, when `username` and/or `password` are provided, the client sends them through the `Authorization: Basic ...` header instead of putting them in the URL query string. This also applies to `ping_with_auth`.
+* For `v1`, when `username` and/or `password` are provided, the client uses the `Authorization: Basic ...` header by default rather than putting them in the URL query string. This also applies to `ping_with_auth`.
+* If a `v1` database requires URL credentials instead, set `{v1_auth_transport, query_string}` to opt in to sending `username` and `password` as `u` and `p` query parameters. The default is `{v1_auth_transport, header}`.
+* Security note: sending credentials in the URL query string is less safe than using the `Authorization` header because URLs may be captured by access logs, proxies, caches, and error reporting systems. Prefer `{v1_auth_transport, header}` whenever possible, and enable TLS (`{https_enabled, true}`) when credentials are sent over the network.
 
 
 ``` erlang

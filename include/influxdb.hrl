@@ -21,11 +21,13 @@
                  | {port, inet:port_number()}.
 -type http_opts() :: [http_opt()].
 -type option_text() :: string() | binary() | atom().
+-type v1_auth_transport() :: header | query_string.
 -type http_opt() :: {host, inet:hostname()}
                   | {port, inet:port_number()}
                   | {database, option_text()}
                   | {username, option_text()}
                   | {password, option_text()}
+                  | {v1_auth_transport, v1_auth_transport()}
                   | {ping_with_auth, boolean()}
                   | {precision, precision()}
                   | {https_enabled, boolean()}

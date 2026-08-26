@@ -18,6 +18,7 @@
 
 -export([ start_client/1
         , update_precision/2
+        , update_bucket/2
         , is_alive/1
         , is_alive/2
         , write/2
@@ -71,6 +72,25 @@ update_precision(#{protocol := http, opts := Opts0} = Client, Precision) ->
 update_precision(#{protocol := udp} = Client, _Precision) ->
     Client.
 
+%% @doc Rebuild the client with a different bucket (v2) or database (v1/v3)
+%% so that writes can be routed to a per-message bucket.
+-spec update_bucket(Client :: map(), Bucket :: binary() | string() | atom()) -> Client :: map().
+update_bucket(#{protocol := http, opts := Opts0} = Client, Bucket) ->
+    Version = proplists:get_value(version, Opts0, v1),
+    Opts1 = set_bucket_option(Version, Opts0, Bucket),
+    Client#{
+        path => write_path(Version, Opts1),
+        auth_path => auth_path(Version, Opts1),
+        opts => Opts1
+    };
+update_bucket(#{protocol := udp} = Client, _Bucket) ->
+    Client.
+
+set_bucket_option(v2, Opts, Bucket) ->
+    [{bucket, Bucket} | proplists:delete(bucket, Opts)];
+set_bucket_option(_Version, Opts, Bucket) ->
+    [{database, Bucket} | proplists:delete(database, Opts)].
+
 -spec(is_alive(Client :: map()) -> true | false).
 is_alive(Client) ->
     is_alive(Client, false).
@@ -90,7 +110,8 @@ when Client :: map(),
      Point :: #{measurement => atom() | binary() | list(),
                 tags => map(),
                 fields => map(),
-                timestamp => integer()}).
+                timestamp => integer()}
+            | binary()).
 write(#{protocol := Protocol} = Client, Points) ->
     try
         case Protocol of
@@ -120,7 +141,8 @@ when Client :: map(),
      Point :: #{measurement => atom() | binary() | list(),
                 tags => map(),
                 fields => map(),
-                timestamp => integer()}).
+                timestamp => integer()}
+            | binary()).
 write(#{protocol := Protocol} = Client, Key, Points) ->
     try
         case Protocol of
@@ -140,7 +162,8 @@ when Client :: map(),
      Point :: #{measurement => atom() | binary() | list(),
                 tags => map(),
                 fields => map(),
-                timestamp => integer()},
+                timestamp => integer()}
+            | binary(),
      ReplayFun :: function(),
      Args :: list()).
 write_async(#{protocol := Protocol} = Client, Points, {ReplayFun, Args}) ->
@@ -163,7 +186,8 @@ when Client :: map(),
      Point :: #{measurement => atom() | binary() | list(),
                 tags => map(),
                 fields => map(),
-                timestamp => integer()},
+                timestamp => integer()}
+            | binary(),
      ReplayFun :: function(),
      Args :: list()).
 write_async(#{protocol := Protocol} = Client, Key, Points, {ReplayFun, Args}) ->
@@ -639,6 +663,43 @@ http_clients_options_v3_auth_path_undefined_test() ->
     Options = [{version, v3}, {token, <<"tok">>}, {database, "mydb"}],
     #{auth_path := AuthPath} = http_clients_options(Options),
     ?assertEqual(undefined, AuthPath).
+
+client(Options) ->
+    maps:merge(
+        #{pool => pool_name("test_pool"), protocol => http},
+        http_clients_options(Options)
+    ).
+
+update_bucket_v2_test() ->
+    Client0 = client([{version, v2}, {org, "org"}, {bucket, "bkt"}, {precision, ms}]),
+    Client1 = influxdb:update_bucket(Client0, <<"new_bucket">>),
+    Path = maps:get(path, Client1),
+    ?assertNotEqual(nomatch, string:find(Path, "/api/v2/write")),
+    ?assertNotEqual(nomatch, string:find(Path, "org=org")),
+    ?assertNotEqual(nomatch, string:find(Path, "bucket=new_bucket")),
+    ?assertNotEqual(nomatch, string:find(Path, "precision=ms")),
+    ?assertNotEqual(nomatch, string:find(maps:get(path, Client0), "bucket=bkt")),
+    ?assertEqual(nomatch, string:find(maps:get(path, Client0), "bucket=new_bucket")).
+
+update_bucket_v1_test() ->
+    Client0 = client([{version, v1}, {database, "mydb"}]),
+    Client1 = influxdb:update_bucket(Client0, <<"new_database">>),
+    Path = maps:get(path, Client1),
+    ?assertNotEqual(nomatch, string:find(Path, "/write")),
+    ?assertNotEqual(nomatch, string:find(Path, "db=new_database")),
+    ?assertEqual(nomatch, string:find(Path, "db=mydb")).
+
+update_bucket_v3_test() ->
+    Client0 = client([{version, v3}, {database, "mydb"}]),
+    Client1 = influxdb:update_bucket(Client0, <<"new_database">>),
+    Path = maps:get(path, Client1),
+    ?assertNotEqual(nomatch, string:find(Path, "/api/v3/write_lp")),
+    ?assertNotEqual(nomatch, string:find(Path, "db=new_database")),
+    ?assertEqual(nomatch, string:find(Path, "db=mydb")).
+
+update_bucket_udp_noop_test() ->
+    Client = #{pool => pool_name("test_pool"), protocol => udp},
+    ?assertEqual(Client, influxdb:update_bucket(Client, <<"new_bucket">>)).
 
 ping_auth_server_start(ExpectedAuthorization) ->
     ping_auth_server_start(ExpectedAuthorization, <<"HTTP/1.1 204 No Content\r\n">>).

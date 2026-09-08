@@ -309,7 +309,16 @@ header(v3, Options) ->
 
 
 str(A) when is_atom(A) -> atom_to_list(A);
-str(B) when is_binary(B) -> binary_to_list(B);
+str(B) when is_binary(B) ->
+    %% Decode UTF-8 into Unicode codepoints so that uri_string:compose_query/1
+    %% percent-encodes each character exactly once. binary_to_list/1 would treat
+    %% each byte as a Latin-1 codepoint and double-encode non-ASCII bucket/
+    %% database names, e.g. `中` -> `%C3%A4%C2%B8%C2%AD` instead of `%E4%B8%AD`.
+    %% Fall back to raw bytes for input that is not valid UTF-8.
+    case unicode:characters_to_list(B) of
+        {error, Converted, Rest} -> Converted ++ binary_to_list(Rest);
+        Chars -> Chars
+    end;
 str(L) when is_list(L) -> L.
 
 maybe_add_basic_auth_header(Headers, Options) ->
@@ -700,6 +709,29 @@ update_bucket_v3_test() ->
 update_bucket_udp_noop_test() ->
     Client = #{pool => pool_name("test_pool"), protocol => udp},
     ?assertEqual(Client, influxdb:update_bucket(Client, <<"new_bucket">>)).
+
+update_bucket_non_ascii_name_test() ->
+    %% Regression: a UTF-8 bucket (v2) or database (v1/v3) name must be
+    %% percent-encoded exactly once. Encoding each byte separately produced
+    %% `%C3%A4%C2%B8%C2%AD` for `中` instead of `%E4%B8%AD`.
+    V2Path = maps:get(
+        path,
+        influxdb:update_bucket(
+            client([{version, v2}, {org, "org"}, {bucket, "bkt"}]),
+            <<"中"/utf8>>
+        )
+    ),
+    ?assertNotEqual(nomatch, string:find(V2Path, "bucket=%E4%B8%AD")),
+    ?assertEqual(nomatch, string:find(V2Path, "bucket=%C3%A4%C2%B8%C2%AD")),
+    V1Path = maps:get(
+        path,
+        influxdb:update_bucket(
+            client([{version, v1}, {database, "mydb"}]),
+            <<"数据"/utf8>>
+        )
+    ),
+    ?assertNotEqual(nomatch, string:find(V1Path, "db=%E6%95%B0%E6%8D%AE")),
+    ?assertEqual(nomatch, string:find(V1Path, "db=mydb")).
 
 ping_auth_server_start(ExpectedAuthorization) ->
     ping_auth_server_start(ExpectedAuthorization, <<"HTTP/1.1 204 No Content\r\n">>).

@@ -287,9 +287,19 @@ ping_headers(#{headers := Headers}) ->
 add_query_param(Key, Name, Acc, Options) ->
     case proplists:get_value(Key, Options) of
         undefined -> Acc;
-        Val when is_binary(Val) -> [{Name, binary_to_list(Val)} | Acc];
+        Val when is_binary(Val) -> [{Name, utf8_codepoints(Val)} | Acc];
         Val when is_list(Val) -> [{Name, Val} | Acc];
         Val when is_atom(Val) -> [{Name, atom_to_list(Val)} | Acc]
+    end.
+
+%% Decode UTF-8 into Unicode codepoints so that uri_string:compose_query/1
+%% percent-encodes each character exactly once (a per-byte list would
+%% double-encode non-ASCII values). Fall back to raw bytes for input that is
+%% not valid UTF-8.
+utf8_codepoints(B) ->
+    case unicode:characters_to_list(B) of
+        {error, Converted, Rest} -> Converted ++ binary_to_list(Rest);
+        Chars -> Chars
     end.
 
 -ifdef(TEST).
@@ -315,6 +325,20 @@ v1_ping_path_does_not_append_empty_query_string_test() ->
             , {ping_with_auth, true}
             ]},
     ?assertEqual("/ping", v1_ping_path(Client)).
+
+v1_ping_path_percent_encodes_utf8_credentials_test() ->
+    Client =
+        #{opts =>
+            [ {version, v1}
+            , {v1_auth_transport, query_string}
+            , {ping_with_auth, true}
+            , {username, <<"user中"/utf8>>}
+            , {password, <<"pw"/utf8>>}
+            ]},
+    Path = v1_ping_path(Client),
+    ?assertNotEqual(nomatch, string:find(Path, "u=user%E4%B8%AD")),
+    ?assertNotEqual(nomatch, string:find(Path, "p=pw")),
+    ?assertEqual(nomatch, string:find(Path, "%C3%A4%C2%B8%C2%AD")).
 -endif.
 
 pick_worker(#{pool := Pool, pool_type := hash}, Key) ->

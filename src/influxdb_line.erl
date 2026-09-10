@@ -31,10 +31,15 @@
 encode(Point) when is_map(Point) ->
     encode([Point]);
 encode(Points) when is_list(Points) ->
-    encode_([generate_point(Point) || Point <- Points]).
+    encode_([encode_point(Point) || Point <- Points]).
+
+encode_point(Point) when is_map(Point) ->
+    generate_point(Point);
+encode_point(RawLine) ->
+    RawLine.
 
 encode_(Points) when is_list(Points), length(Points) > 0 ->
-    lists:foldr(fun(Point, Acc) when is_map(Point) ->
+    lists:foldr(fun(Point, Acc) ->
                     [encode_(Point) | Acc]
                 end, [], Points);
 
@@ -47,6 +52,14 @@ encode_(Point = #{measurement := Measurement, fields := Fields}) ->
           Timestamp -> [" ", encode_timestamp(Timestamp)]
       end,
       "\n"];
+
+encode_(<<>>) ->
+    [];
+encode_(Point) when is_binary(Point) ->
+    case binary:last(Point) of
+        $\n -> [Point];
+        _ -> [Point, "\n"]
+    end;
 
 encode_(Point) ->
     error({invalid_point, Point}).
@@ -152,3 +165,58 @@ point_key(<<"measurement">>) -> measurement;
 point_key(<<"tags">>) -> tags;
 point_key(<<"fields">>) -> fields;
 point_key(<<"timestamp">>) -> timestamp.
+
+%%===================================================================
+%% eunit tests
+%%===================================================================
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+encode_raw_lines_test_() ->
+    Point = #{
+        measurement => <<"m">>,
+        fields => #{<<"f">> => {int, 1}}
+    },
+    [
+        {"raw line without trailing newline gets one appended",
+            ?_assertEqual(
+                <<"m f=1i\n", "weather,location=us-midwest temperature=82 1465839830100400200\n">>,
+                iolist_to_binary(
+                    influxdb_line:encode([
+                        Point,
+                        <<"weather,location=us-midwest temperature=82 1465839830100400200">>
+                    ])
+                )
+            )},
+        {"raw line with trailing newline is not duplicated",
+            ?_assertEqual(
+                <<"m f=1i\n", "weather temperature=82 1465839830100400200\n">>,
+                iolist_to_binary(
+                    influxdb_line:encode([
+                        Point,
+                        <<"weather temperature=82 1465839830100400200\n">>
+                    ])
+                )
+            )},
+        {"raw line containing multiple lines is preserved",
+            ?_assertEqual(
+                <<"l1,f=1 1\nl2,f=2 2\n">>,
+                iolist_to_binary(influxdb_line:encode([<<"l1,f=1 1\nl2,f=2 2">>]))
+            )},
+        {"empty raw line is skipped",
+            ?_assertEqual(
+                <<"m f=1i\n">>,
+                iolist_to_binary(influxdb_line:encode([Point, <<>>]))
+            )},
+        {"raw lines only",
+            ?_assertEqual(
+                <<"a,f=1 1\nb,f=2 2\n">>,
+                iolist_to_binary(influxdb_line:encode([<<"a,f=1 1">>, <<"b,f=2 2">>]))
+            )}
+    ].
+
+encode_invalid_point_still_fails_test() ->
+    ?assertError({invalid_point, _}, influxdb_line:encode([#{foo => bar}])).
+
+-endif.
